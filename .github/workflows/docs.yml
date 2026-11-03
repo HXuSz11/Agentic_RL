@@ -1,7 +1,8 @@
 name: Documentation site
 
 # 每次推送都构建并校验网站；只有默认分支会部署到 GitHub Pages。
-# 首次部署前需要在仓库 Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"。
+# 首次部署前需要在仓库 Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"；
+# 没开启时 deploy 任务只给出警告并跳过，开启后重新运行本工作流即可上线。
 on:
   push:
     paths:
@@ -50,7 +51,32 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@v5
+      # 工作流自带的 GITHUB_TOKEN 无权开启 Pages（configure-pages 的 enablement 需要另外的令牌），
+      # 所以先检查：没开启时给出提示并跳过部署，而不是让整个工作流失败
+      - name: Check that GitHub Pages is enabled
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          settings="https://github.com/${GITHUB_REPOSITORY}/settings/pages"
+          if out=$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type 2>&1); then
+            if [ "$out" != "workflow" ]; then
+              echo "::error title=GitHub Pages 来源不对::当前来源是 ${out}，请在 ${settings} 把 Source 改为 GitHub Actions，再重新运行本工作流"
+              exit 1
+            fi
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$out" == *"HTTP 404"* ]]; then
+            msg="仓库还没有开启 GitHub Pages，本次只构建、不部署。请在 ${settings} 把 Build and deployment → Source 设为 GitHub Actions，然后在 Actions 页面重新运行本工作流（或用 Run workflow 手动触发）。"
+            echo "::warning title=GitHub Pages 未开启，已跳过部署::${msg}"
+            { echo "### GitHub Pages 未开启，已跳过部署"; echo; echo "${msg}"; } >> "$GITHUB_STEP_SUMMARY"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error title=无法读取 GitHub Pages 配置::${out}"
+            exit 1
+          fi
+      - uses: actions/configure-pages@v6
+        if: steps.pages.outputs.enabled == 'true'
       - name: Deploy to GitHub Pages
+        if: steps.pages.outputs.enabled == 'true'
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
