@@ -202,11 +202,13 @@ AgentOPSD 的核心变化发生在 loss 之前：我们先在主进程里把 Tea
 uv sync --extra kernels --extra alfworld
 
 # 可选：只在 --swanlab-mode online 时需要
-swanlab login
+uv run swanlab login
 
 uv run --extra alfworld alfworld-download \
     --data-dir "$PWD/experiments/agentopsd/datasets/alfworld"
 ```
+
+若 kernels 编译失败（缺 CUDA 工具链），可以先运行 `uv sync --extra alfworld` 继续，训练会退回较慢的纯 PyTorch 实现；详见 [快速开始](../../docs/content/guide/quickstart.md)。
 
 模型 `Qwen/Qwen3.5-4B` 会在第一次运行时自动从 HuggingFace 下载；国内网络可以先执行 `uv run python -m localtrio download Qwen/Qwen3.5-4B --source modelscope`。
 

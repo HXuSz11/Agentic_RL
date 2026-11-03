@@ -12,16 +12,20 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import weakref
+
 import numpy as np
 
 from .errors import ValidationError
 from .futures import APIFuture
+from .losses import LOSS_INPUT_SCHEMAS, normalize_loss_fn
 from .runtime import Runtime
 from .sampling import SamplingClient
 from .serialize import datum_to_wire
 from .types import (
     AdamParams,
     Datum,
+    EncodedTextChunk,
     ForwardBackwardOutput,
     OptimStepResponse,
     SaveWeightsForSamplerResponse,
@@ -52,6 +56,15 @@ def _to_output(raw: dict[str, Any], extra_metrics: dict[str, float] | None = Non
     if extra_metrics:
         metrics.update({k: float(v) for k, v in extra_metrics.items()})
     return ForwardBackwardOutput(loss_fn_outputs=outputs, metrics=metrics)
+
+
+def _drop_run(worker: Any, run_id: str) -> None:
+    """TrainingClient 被回收时调用（不能引用 client 本身）。"""
+    try:
+        if worker.alive:
+            worker.call("drop_run", run_id=run_id)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _invoke_custom_loss(loss_fn: Callable, data: list[Datum], logprobs: list[Any], config: dict[str, object] | None) -> Any:
@@ -92,7 +105,11 @@ class TrainingClient:
         self.run_dir = self._runtime.home / "runs" / self.training_run_cuid
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._worker = self._runtime.trainer(base_model)
-        self._temp_weights: list[Path] = []
+        self._temp_weights: list[tuple[Path, Any]] = []
+        self._vocab: int | None = None
+        # 没有显式 close() 就被丢弃时，也让 trainer 释放这个 run 占用的显存
+        self._finalizer = weakref.finalize(self, _drop_run, self._worker, self.training_run_cuid)
+        self._finalizer.atexit = False
         self._init = self._worker.call(
             "create_run",
             run_id=self.training_run_cuid,
@@ -107,36 +124,88 @@ class TrainingClient:
         self._init.add_done_callback(self._report_init)
 
     def _report_init(self, fut: Any) -> None:
-        if fut.exception() is None:
+        error = fut.exception()
+        if error is None:
             info = fut.result()
             print(
                 f"[localtrio] training run {self.training_run_cuid}: base={self.base_model} rank={self.rank} "
                 f"trainable={info['trainable_params'] / 1e6:.1f}M targets={','.join(info['target_modules'])}",
                 flush=True,
             )
+        else:
+            logger.error("训练 run %s 创建失败：%s", self.training_run_cuid, error)
+            print(f"[localtrio] training run {self.training_run_cuid} 创建失败：\n{error}", flush=True)
 
     def _call(self, method: str, **kwargs: Any) -> Any:
+        if self._init.done() and self._init.exception() is not None:
+            from concurrent.futures import Future
+
+            fut: Future = Future()
+            fut.set_exception(RuntimeError(f"训练 run {self.training_run_cuid} 创建失败，无法执行 {method}：\n{self._init.exception()}"))
+            return fut
         return self._worker.call(method, run_id=self.training_run_cuid, **kwargs)
 
+    def _vocab_limit(self) -> int:
+        """合法 token id 的上界：max(tokenizer 长度, 模型词表大小)。"""
+        if self._vocab is None:
+            from .models import read_config_json
+
+            cfg = read_config_json(self._runtime.model_dir(self.base_model))
+            sizes = [len(self.get_tokenizer()), int(cfg.get("vocab_size") or 0), int((cfg.get("text_config") or {}).get("vocab_size") or 0)]
+            self._vocab = max(sizes)
+        return self._vocab
+
     @staticmethod
-    def _validate_batch(data: list[Datum]) -> None:
+    def _wire_keys(loss_fn: str, datum: Datum) -> tuple[str, ...]:
+        """只把当前 loss 需要的字段发给 trainer（与 PyTRIO 一致）；其余字段留在本地给 custom loss 用。"""
+        keys = LOSS_INPUT_SCHEMAS[loss_fn]
+        if loss_fn == "cross_entropy" and "weights" in datum.loss_fn_inputs:
+            keys = (*keys, "weights")
+        return keys
+
+    def _validate_batch(self, data: list[Datum], loss_fn: str) -> str:
+        """与 PyTRIO SDK 的客户端校验一致：必需字段、形状、有限值、token id 范围。"""
         if not data:
             raise ValidationError("training data cannot be empty", code="validation.empty_training_data")
+        try:
+            name = normalize_loss_fn(loss_fn)
+        except ValueError as error:
+            raise ValidationError(str(error)) from None
+        vocab = self._vocab_limit()
         for idx, datum in enumerate(data):
-            if "target_tokens" not in datum.loss_fn_inputs:
-                raise ValidationError(f"target_tokens is required (datum {idx})")
-            target = datum.loss_fn_inputs["target_tokens"]
-            if target.dtype != "int64":
-                raise ValidationError("target_tokens must have dtype int64")
             if datum.model_input.is_empty:
-                raise ValidationError("training samples cannot be empty")
+                raise ValidationError(f"training samples cannot be empty (datum {idx})", code="validation.empty_training_sample")
+            for field_name in LOSS_INPUT_SCHEMAS[name]:
+                if field_name not in datum.loss_fn_inputs:
+                    raise ValidationError(f"{field_name} is required (datum {idx}, loss_fn={name})")
+            if datum.loss_fn_inputs["target_tokens"].dtype != "int64":
+                raise ValidationError(f"target_tokens must have dtype int64 (datum {idx})")
+            try:
+                length: int | None = len(datum.model_input)
+            except ValueError:
+                length = None  # 图片缺少 expected_tokens，由训练端推断
+            for key in self._wire_keys(name, datum):
+                tensor = datum.loss_fn_inputs[key]
+                if length is not None and tensor.shape != [length]:
+                    raise ValidationError(f"{key} must have shape [{length}], got {tensor.shape} (datum {idx})")
+                if tensor.dtype == "float32" and not np.isfinite(np.asarray(tensor.data, dtype=np.float64)).all():
+                    raise ValidationError(f"{key} contains NaN/inf (datum {idx})", code="validation.non_finite")
+            targets = np.asarray(datum.loss_fn_inputs["target_tokens"].data, dtype=np.int64)
+            if (((targets < 0) | (targets >= vocab)) & (targets != -100)).any():
+                raise ValidationError(f"target_tokens 有超出词表的 id（datum {idx}，词表 {vocab}，-100 表示忽略）", code="validation.token_id_out_of_range")
+            for chunk in datum.model_input.chunks:
+                if isinstance(chunk, EncodedTextChunk) and chunk.tokens:
+                    ids = np.asarray(chunk.tokens, dtype=np.int64)
+                    if ((ids < 0) | (ids >= vocab)).any():
+                        raise ValidationError(f"model_input 有超出词表的 token id（datum {idx}，词表 {vocab}）", code="validation.token_id_out_of_range")
+        return name
 
     # ------------------------------------------------------------------ forward / backward
     def _forward(self, data: list[Datum], loss_fn: str, loss_fn_config: dict[str, object] | None, auto_shift: bool, backward: bool) -> APIFuture[ForwardBackwardOutput]:
-        self._validate_batch(data)
+        name = self._validate_batch(data, loss_fn)
         fut = self._call(
             "forward",
-            batch=[datum_to_wire(d) for d in data],
+            batch=[datum_to_wire(d, self._wire_keys(name, d)) for d in data],
             loss_fn=loss_fn,
             loss_fn_config=dict(loss_fn_config or {}),
             auto_shift=bool(auto_shift),
@@ -170,9 +239,12 @@ class TrainingClient:
             raise ValidationError("Custom loss output has no gradients. Ensure loss_fn returns a tensor with gradients.")
         loss.backward()
         grads = []
-        for lp in logprobs:
-            grads.append((lp.grad if lp.grad is not None else torch.zeros_like(lp)).detach().cpu().numpy())
-        fut = self._call("linear_backward", batch=[datum_to_wire(d) for d in data], grads=grads)
+        for idx, lp in enumerate(logprobs):
+            grad = (lp.grad if lp.grad is not None else torch.zeros_like(lp)).detach().cpu()
+            if not torch.isfinite(grad).all():
+                raise ValidationError(f"custom loss 对第 {idx} 条样本 logprob 的梯度含 NaN/inf", code="validation.non_finite")
+            grads.append(grad.numpy())
+        fut = self._call("linear_backward", batch=[datum_to_wire(d, ("target_tokens",)) for d in data], grads=grads)
         return APIFuture(fut).map(lambda raw: _to_output(raw, dict(custom_metrics or {})))
 
     def forward_backward_custom(self, data: list[Datum], loss_fn: Callable, loss_fn_config: dict[str, object] | None = None) -> APIFuture[ForwardBackwardOutput]:
@@ -196,10 +268,10 @@ class TrainingClient:
     def save_state(self, name: str, ttl_seconds: int | None = None, overwrite: bool = False) -> APIFuture[SaveWeightsResponse]:
         """保存 LoRA 权重 + AdamW 状态，可用 ``create_training_client_from_state`` 恢复。"""
         path = self.run_dir / "states" / _normalize_name(name)
-        if path.exists():
-            if not overwrite:
-                return APIFuture.failed(ValidationError(f"checkpoint {path} 已存在（overwrite=False）"))  # type: ignore[return-value]
-            shutil.rmtree(path)
+        if path.exists() and not overwrite:
+            return APIFuture.failed(ValidationError(f"checkpoint {path} 已存在（overwrite=False）"))  # type: ignore[return-value]
+        # 覆盖时由 trainer 在真正执行保存时原子替换（先写临时目录再 rename），
+        # 排队期间旧目录保持可用
         fut = self._call("save", path=str(path), kind="state")
         return APIFuture(fut).map(lambda r: SaveWeightsResponse(path=r["path"], model=self.base_model, size=int(r["size"])))
 
@@ -209,8 +281,7 @@ class TrainingClient:
     def save_weights_for_sampler(self, name: str, ttl_seconds: int | None = None) -> APIFuture[SaveWeightsForSamplerResponse]:
         """保存可被 vLLM 直接加载的 PEFT adapter 目录，返回其绝对路径。"""
         path = self.run_dir / "sampler_weights" / _normalize_name(name)
-        if path.exists():
-            shutil.rmtree(path)
+        # 同名目录由 trainer 原子替换；采样端按“路径 + 修改时间”识别新版本
         return self._save_sampler(path)
 
     def _save_sampler(self, path: Path) -> APIFuture[SaveWeightsForSamplerResponse]:
@@ -245,19 +316,33 @@ class TrainingClient:
         """保存当前权重到临时目录并返回绑定它的 SamplingClient（每个 RL step 调用一次）。"""
         path = self.run_dir / "tmp_sampler" / f"temp-sampling-{uuid.uuid4().hex[:12]}"
         result = self._save_sampler(path).result()
-        self._rotate_temp(Path(result.path))
-        return self.create_sampling_client(result.path)
+        return self._temp_client(Path(result.path))
 
     async def save_weights_and_get_sampling_client_async(self) -> SamplingClient:
         path = self.run_dir / "tmp_sampler" / f"temp-sampling-{uuid.uuid4().hex[:12]}"
         result = await self._save_sampler(path)
-        self._rotate_temp(Path(result.path))
-        return self.create_sampling_client(result.path)
+        return self._temp_client(Path(result.path))
 
-    def _rotate_temp(self, path: Path) -> None:
-        self._temp_weights.append(path)
-        while len(self._temp_weights) > _KEEP_TEMP_WEIGHTS:
-            shutil.rmtree(self._temp_weights.pop(0), ignore_errors=True)
+    def _temp_client(self, path: Path) -> SamplingClient:
+        client = self.create_sampling_client(str(path))
+        self._temp_weights.append((path, weakref.ref(client)))
+        self._rotate_temp()
+        return client
+
+    def _rotate_temp(self) -> None:
+        """只保留最近 4 份临时权重；更早的目录在没有 SamplingClient 引用它之后才删除。
+
+        vLLM 会按需（以及 LRU 淘汰后）从磁盘重新加载 adapter，所以仍在使用的目录不能删。
+        """
+        keep = self._temp_weights[-_KEEP_TEMP_WEIGHTS:]
+        older = self._temp_weights[:-_KEEP_TEMP_WEIGHTS]
+        alive = []
+        for path, ref in older:
+            if ref() is None:
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                alive.append((path, ref))
+        self._temp_weights = alive + keep
 
     # ------------------------------------------------------------------ misc
     def get_tokenizer(self) -> Any:
@@ -267,10 +352,15 @@ class TrainingClient:
         return {"run_id": self.training_run_cuid, "base_model": self.base_model, "run_dir": str(self.run_dir), **self._init.result()}
 
     def close(self) -> None:
+        """释放 trainer 里这个 run 的 adapter、优化器状态和梯度，并清理临时采样权重。"""
+        self._finalizer.detach()
         try:
             self._worker.call("drop_run", run_id=self.training_run_cuid).result(timeout=60)
         except Exception:  # noqa: BLE001
             pass
+        for path, _ in self._temp_weights:
+            shutil.rmtree(path, ignore_errors=True)
+        self._temp_weights = []
 
     async def close_async(self) -> None:
         await asyncio.to_thread(self.close)

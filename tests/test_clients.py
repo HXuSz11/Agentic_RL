@@ -218,3 +218,48 @@ def test_overwritten_weights_are_reloaded(trio, text_model):
     assert second.path == first.path
     after = service.create_sampling_client(base_model=text_model, model_path=second.path).compute_logprobs(full).result()
     assert sum(after[len(ids):]) > sum(before[len(ids):]) + 0.5
+
+
+def test_client_side_validation_and_local_fields(trio, text_model):
+    service = trio.ServiceClient()
+    tc = service.create_lora_training_client(base_model=text_model, rank=4, seed=1)
+    ids = [5, 6, 7, 8, 9]
+    good = dict(
+        target_tokens=np.asarray([6, 7, 8, 9, 10], dtype=np.int64),
+        logprobs=np.full(5, -1.0, dtype=np.float32),
+        advantages=np.ones(5, dtype=np.float32),
+    )
+    bad_adv = dict(good, advantages=np.asarray([1, np.nan, 1, 1, 1], dtype=np.float32))
+    with pytest.raises(trio.ValidationError, match="NaN"):
+        tc.forward_backward([trio.Datum(model_input=trio.ModelInput.from_ints(ids), loss_fn_inputs=bad_adv)], loss_fn="importance_sampling")
+    bad_tgt = dict(good, target_tokens=np.asarray([6, 7, -1, 9, 10], dtype=np.int64))
+    with pytest.raises(trio.ValidationError, match="词表"):
+        tc.forward_backward([trio.Datum(model_input=trio.ModelInput.from_ints(ids), loss_fn_inputs=bad_tgt)], loss_fn="importance_sampling")
+    # 额外的本地字段（如序列级标量）不会发给 trainer，可在 custom loss 里读取
+    extra = dict(good, seq_reward=trio.types.TensorData(data=[2.0], dtype="float32", shape=[]))
+    datum = trio.Datum(model_input=trio.ModelInput.from_ints(ids), loss_fn_inputs=extra)
+    tc.forward_backward([datum], loss_fn="importance_sampling").result()
+
+    def custom(data, lps):
+        scale = data[0].loss_fn_inputs["seq_reward"].data[0]
+        return -(lps[0].sum() * scale), {"scale": scale}
+
+    out = tc.forward_backward_custom([datum], custom).result()
+    assert out.metrics["scale"] == 2.0
+
+
+def test_temp_weights_kept_while_sampler_alive(trio, text_model):
+    import gc
+
+    service = trio.ServiceClient()
+    tc = service.create_lora_training_client(base_model=text_model, rank=4, seed=2)
+    first = tc.save_weights_and_get_sampling_client()
+    first_dir = first.model_path
+    others = [tc.save_weights_and_get_sampling_client() for _ in range(6)]
+    assert os.path.isdir(first_dir), "仍被引用的临时权重不能被删除"
+    oldest_unreferenced = others[0].model_path
+    del others
+    gc.collect()
+    tc.save_weights_and_get_sampling_client()
+    assert not os.path.isdir(oldest_unreferenced)
+    assert os.path.isdir(first_dir)

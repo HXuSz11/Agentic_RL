@@ -2,7 +2,9 @@
 
 本地 GPU 版：训练与采样通过 localtrio（与 PyTRIO 同名同参的本地实现）执行，
 默认 GPU0 跑 LoRA 训练（transformers + PEFT），GPU1/2/3 各跑一个 vLLM 采样副本。
-不需要 ``trio login`` 或 API Key；GPU 布局可用 ``LOCALTRIO_CONFIG=configs/xxx.yaml`` 切换。
+不需要 ``trio login`` 或 API Key；GPU 布局可用 ``LOCALTRIO_CONFIG`` 切换，路径按当前目录解析：
+在仓库根目录写 ``LOCALTRIO_CONFIG=configs/xxx.yaml``，在 experiments/gspo 目录下写
+``LOCALTRIO_CONFIG=../../configs/xxx.yaml``（也可以用绝对路径）。
 
 快速接口试跑（在 experiments/gspo 目录下运行；短 completion 可能使整组退化并跳过更新）：
 

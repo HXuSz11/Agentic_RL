@@ -82,6 +82,16 @@ optim_step ──► save_weights_and_get_sampling_client()
 - 返回的 `metrics` 与 PyTRIO 同名：`loss_sum`、`token_count`、`loss_mean = loss_sum / token_count`；custom loss 返回的指标会合并进去。
 - 采样端返回的 logprob 是**原始模型分布**（vLLM `logprobs_mode=raw_logprobs`），与训练端 `forward` 口径一致，on-policy 时 ratio ≈ 1。
 
+## 出错时的行为
+
+- **客户端校验**（与 PyTRIO SDK 一致）：缺少当前 loss 需要的字段、形状与 `model_input` 不一致、含 NaN/inf、`target_tokens` 超出词表（`-100` 除外）或输入 token 越界时，`forward_backward` 直接抛 `trio.ValidationError`，不会把坏数据送进 trainer。custom loss 的梯度含 NaN/inf 时同样报错。
+- **只发送 loss 需要的字段**：`loss_fn_inputs` 里多出来的字段（例如 custom loss 自己读取的序列级标量）留在主进程，不参与 trainer 端的形状校验。
+- **失败不污染梯度**：一次 `forward_backward` 中途失败（例如某个 micro-batch OOM）时，这次调用已经产生的梯度会被丢弃，之前累积的梯度原样保留。
+- **创建失败会说明原因**：`create_lora_training_client` / `create_training_client_from_state` 失败（rank 越界、checkpoint 结构不匹配等）时，后续每次调用都会带上原始报错。
+- **启动超时**：`worker_start_timeout`（默认 1800 秒）覆盖“连接 + 加载模型 / 初始化 vLLM”整个阶段；超时或初始化失败会结束整个引擎进程组，释放显存。
+- **临时采样权重**：`save_weights_and_get_sampling_client` 生成的目录只保留最近 4 份，但仍被某个 `SamplingClient` 引用的目录不会删除；同名 `save_weights_for_sampler` 由 trainer 先写临时目录再原子替换。
+- **确定性前向**：训练端所有 Dropout（含 `lora_dropout`、注意力 dropout）在计算时都关闭，保证 custom loss 的两次前向一致；需要梯度时模型处于 train 模式，梯度检查点真正生效。
+
 ## 图文输入
 
 `ImageChunk` 在序列里替代一个 `<|image_pad|>`：

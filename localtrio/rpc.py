@@ -130,6 +130,32 @@ class WorkerHandle:
             if not fut.done():
                 fut.set_exception(WorkerError(reason))
 
+    def _kill_process_group(self) -> None:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if self.proc.poll() is not None:
+                break
+            try:
+                os.killpg(self.proc.pid, sig)
+            except (ProcessLookupError, PermissionError):
+                break
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                continue
+        try:  # vLLM 派生的子进程也在同一进程组
+            os.killpg(self.proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def _abort_start(self, reason: str) -> None:
+        """启动失败：让所有等待中的调用报错，并杀掉子进程组，释放它可能占着的显存。"""
+        self._fail_all(reason)
+        try:
+            self._listener.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._kill_process_group()
+
     def _connect_and_serve(self) -> None:
         accepted: dict[str, Connection] = {}
 
@@ -141,21 +167,41 @@ class WorkerHandle:
 
         t = threading.Thread(target=accept, daemon=True)
         t.start()
+        # 启动超时覆盖“连接 + 加载模型 / 初始化 vLLM”整个阶段，直到收到 ready
         deadline = time.time() + self.start_timeout
         while t.is_alive():
             t.join(timeout=0.5)
             if self.proc.poll() is not None and t.is_alive():
-                self._fail_all(f"{self.name} 进程启动失败 (exit={self.proc.returncode})\n{self._log_tail()}")
+                self._abort_start(f"{self.name} 进程启动失败 (exit={self.proc.returncode})\n{self._log_tail()}")
                 return
             if time.time() > deadline:
-                self._fail_all(f"{self.name} 启动超时\n{self._log_tail()}")
+                self._abort_start(f"{self.name} 启动超时（{self.start_timeout:.0f}s 内没有连上）\n{self._log_tail()}")
                 return
         if "conn" not in accepted:
-            self._fail_all(f"{self.name} 连接失败: {accepted.get('error')}")
+            self._abort_start(f"{self.name} 连接失败: {accepted.get('error')}")
             return
         self._conn = accepted["conn"]
         self._listener.close()
         try:
+            while not self._ready.is_set():
+                if self._conn.poll(0.5):
+                    msg = self._conn.recv()
+                    if msg[0] == "ready":
+                        self.info = msg[1] or {}
+                        self._ready.set()
+                        print(f"[localtrio] {self.name} ready", flush=True)
+                    elif msg[0] == "fatal":
+                        self._abort_start(f"{self.name} 初始化失败:\n{msg[1]}")
+                        return
+                    continue
+                if self.proc.poll() is not None:
+                    self._abort_start(f"{self.name} 初始化时进程退出 (exit={self.proc.returncode})\n{self._log_tail()}")
+                    return
+                if time.time() > deadline:
+                    self._abort_start(
+                        f"{self.name} 初始化超时（{self.start_timeout:.0f}s 内没有就绪，可调大 worker_start_timeout）\n{self._log_tail()}"
+                    )
+                    return
             while True:
                 msg = self._conn.recv()
                 kind = msg[0]
@@ -184,6 +230,14 @@ class WorkerHandle:
         while True:
             item = self._send_queue.get()
             if item is None:
+                return
+            if item is _SHUTDOWN:
+                # shutdown 也经由发送线程发出，避免与正在发送的大请求在同一个连接上交错写入
+                try:
+                    if self._conn is not None:
+                        self._conn.send(("shutdown",))
+                except Exception:  # noqa: BLE001
+                    pass
                 return
             req_id, method, kwargs, fut = item
             if self._dead_reason is not None or self._conn is None:
@@ -228,49 +282,51 @@ class WorkerHandle:
     def alive(self) -> bool:
         return self._dead_reason is None and self.proc.poll() is None
 
-    def shutdown(self, timeout: float = 15.0) -> None:
+    def request_shutdown(self) -> None:
+        """不再接受新调用，并让发送线程在已排队的请求之后发出 shutdown。"""
+        if self._dead_reason is None:
+            self._dead_reason = f"{self.name} 已关闭"
+        self._send_queue.put(_SHUTDOWN)
+
+    def finish_shutdown(self, timeout: float = 15.0) -> None:
         if self.proc.poll() is None:
-            try:
-                if self._conn is not None:
-                    self._conn.send(("shutdown",))
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 self.proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 pass
-        if self.proc.poll() is None:
-            for sig in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.killpg(self.proc.pid, sig)
-                except (ProcessLookupError, PermissionError):
-                    break
-                try:
-                    self.proc.wait(timeout=5)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-        else:
-            # vLLM 会派生自己的子进程，进程组一并清理
-            try:
-                os.killpg(self.proc.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+        self._kill_process_group()
+        self._fail_all(self._dead_reason or f"{self.name} 已关闭")
         self._send_queue.put(None)
         if self._log_handle is not None:
-            self._log_handle.close()
+            try:
+                self._log_handle.close()
+            except Exception:  # noqa: BLE001
+                pass
         shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def shutdown(self, timeout: float = 15.0) -> None:
+        self.request_shutdown()
+        self.finish_shutdown(timeout)
+
+
+_SHUTDOWN = object()
 
 
 def shutdown_all() -> None:
+    """并行关闭所有引擎：先全部发出 shutdown，再统一等待 / 强制结束。"""
     with _ALL_LOCK:
         workers = list(_ALL_WORKERS)
         _ALL_WORKERS.clear()
     for worker in workers:
         try:
-            worker.shutdown()
+            worker.request_shutdown()
         except Exception:  # noqa: BLE001
             pass
+    threads = [threading.Thread(target=worker.finish_shutdown, daemon=True) for worker in workers]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
 
 
 atexit.register(shutdown_all)

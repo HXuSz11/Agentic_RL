@@ -515,8 +515,7 @@ def main(args: argparse.Namespace) -> None:
                     training_client.save_weights_and_get_sampling_client()
                 )
                 snapshot_seconds = perf_counter() - phase_started
-                # PyTRIO 用远端 task_id 标识快照；localtrio 没有该字段，
-                # snapshot_id_of 会退回到本地权重目录对应的 sampling_run_cuid。
+                # localtrio 的 task_id 等于本地权重目录对应的 sampling_run_cuid，可唯一标识快照。
                 snapshot_id = snapshot_id_of(sampling_client)
 
                 progress.set_postfix(phase="student-rollout", refresh=True)

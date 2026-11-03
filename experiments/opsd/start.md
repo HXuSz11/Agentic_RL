@@ -93,7 +93,9 @@ uv run python experiments/opsd/00-eval-aime25.py \
 再依次评测 4 个 checkpoint。`--model-path` 直接传本地目录，输出文件名保持 `aime25-sampler-steps<N>.jsonl`，`analysis.py` 按这个名字识别：
 
 ```bash
-RUN_DIR=$(ls -dt ~/.cache/localtrio/runs/run_* | head -1)   # 最近一次训练
+LOCALTRIO_ROOT="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"   # 配置文件里设了 home: 时以它为准
+RUN_DIR=$(ls -dt "$LOCALTRIO_ROOT"/runs/run_* | head -1)   # 最近一次训练
+RUN_NAME=opsd-async-qwen35-4b-sampled-token-steps100   # 同步版为 opsd-sync-qwen35-4b-sampled-token-steps100；用了 --run-name 时改成对应值
 ls "$RUN_DIR/sampler_weights"
 
 for s in 25 50 75 100; do
@@ -102,7 +104,7 @@ for s in 25 50 75 100; do
       --max-tokens 38912 \
       --temperature 1.0 \
       --enable-thinking false \
-      --model-path "$RUN_DIR/sampler_weights/opsd-async-qwen35-4b-sampled-token-steps100-step$(printf %06d $s)" \
+      --model-path "$RUN_DIR/sampler_weights/$RUN_NAME-step$(printf %06d $s)" \
       --output experiments/opsd/eval-results/aime25-sampler-steps$s.jsonl
 done
 ```
@@ -121,7 +123,7 @@ uv run python experiments/opsd/analysis.py
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA rank 64/优化器约 2～3GB + 激活，常规约 15～25GB；短序列多时 logprob 分块会更高 |
+| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA rank 64/优化器约 2～3GB + 激活，常规约 15～25GB（含 lm_head 分块约 1～3GB） |
 | GPU1/2/3 显存 | 每卡 vLLM 预分配约 40GB（`gpu_memory_utilization=0.85`） |
 | 每个训练 step | 约 1～1.5 分钟（32 条 ≤1,024 token 的 rollout + Teacher 打分 + 一次更新） |
 | 100 steps | 约 1.5～2.5 小时，不含首次下载模型和启动 vLLM |
@@ -133,13 +135,13 @@ uv run python experiments/opsd/analysis.py
 
 **GPU0（trainer）显存不足（CUDA OOM）**
 
-OPSD 的每条序列只有约 1k token，一个 micro-batch（默认上限 16384 token）会装下十几条序列；计算 logprob 时的分块张量大小约为“序列数 × `logits_chunk_size` × 约 25 万的词表”，是 trainer 显存峰值的主要来源。遇到 OOM 时调小 `trainer.logits_chunk_size`（默认 1024，可依次试 512、256），必要时再调小 `trainer.max_tokens_per_microbatch`。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
+OPSD 每条序列约 1k token，一个 micro-batch（默认上限 16384 token）会装下十几条序列。trainer 显存中，基模权重约 9～10GB 是固定的；可调的部分主要是激活和梯度检查点重算一层时的峰值，它们随 `trainer.max_tokens_per_microbatch` 线性增长。计算 logprob 时先去掉 padding、按总 token 数分块，每块只有 `[logits_chunk_size, 约 25 万词表]` 的 fp32 logits，默认 1024 时约 1～3GB，与 micro-batch 内有多少条序列无关。遇到 OOM 时先调小 `trainer.max_tokens_per_microbatch`（16384 → 8192 → 4096），仍不够再调小 `trainer.logits_chunk_size`（1024 → 512）；没装 `--extra kernels` 时线性注意力回退到纯 PyTorch，也会更占显存。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
 
 ```yaml
 # my-localtrio.yaml
 trainer:
-  logits_chunk_size: 256
   max_tokens_per_microbatch: 8192
+  logits_chunk_size: 512
 ```
 
 ```bash
@@ -150,13 +152,13 @@ micro-batch 只影响显存和速度，内置 `importance_sampling` loss 按整�
 
 **vLLM 在 Teacher 打分或评测时显存不足、提示 KV cache 不够**
 
-Teacher 的 `compute_logprobs` 要为带参考解答的整段 prompt 计算逐 token logprob，评测又允许单条回答长达 38,912 token，这两处对 vLLM 显存的压力最大。可以在配置文件里调低 `gpu_memory_utilization`、限制每次调度的 token 数，并把 `max_model_len` 设成刚好够用的长度（评测需要 prompt + 38,912）：
+Teacher 的 `compute_logprobs` 要为带参考解答的整段 prompt 计算逐 token logprob，评测又允许单条回答长达 38,912 token，这两处对 vLLM 显存的压力最大。可以在配置文件里调低 `gpu_memory_utilization`，把 `max_num_batched_tokens` 从默认的 2048 调到 1024（`compute_logprobs` 要为每个 prompt token 算整词表 fp32 logprob，显存尖峰与它成正比，2048 约 4～5GB），并把 `max_model_len` 设成刚好够用的长度（评测需要 prompt + 38,912）：
 
 ```yaml
 models:
   default:
     gpu_memory_utilization: 0.80
-    max_num_batched_tokens: 2048
+    max_num_batched_tokens: 1024
     max_model_len: 40960
 ```
 
@@ -181,7 +183,7 @@ trainer:
 
 **训练还在跑，想同时评测**
 
-评测会在默认的 GPU1/2/3 上再启动一组 vLLM，和正在训练的采样副本抢显存。建议训练结束后再评测；确实要并行时，用 `LOCALTRIO_SAMPLER_GPUS` 指定空闲的卡。多个 checkpoint 也可以分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3` 并行评测。
+评测会在默认的 GPU1/2/3 上再启动一组 vLLM，和正在训练的采样副本抢显存。建议训练结束后再评测。默认布局下训练时 4 张卡都被占用（GPU0 trainer，GPU1/2/3 采样）。确实要并行，就在启动训练时加 `LOCALTRIO_SAMPLER_GPUS=1,2` 只用两个采样副本，把 GPU3 空出来，评测时再加 `LOCALTRIO_SAMPLER_GPUS=3`。训练结束后，多个 checkpoint 可以分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3` 并行评测。
 
 **引擎启动失败，想看详细报错**
 

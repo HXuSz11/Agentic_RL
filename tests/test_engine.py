@@ -352,3 +352,77 @@ def test_per_call_normalization_override(text_model):
     sum_grad = lora_grads(eng, "n")
     zero_grads(eng, "n")
     torch.testing.assert_close(sum_grad, mean_grad * out["metrics"]["token_count"], rtol=1e-4, atol=1e-6)
+
+
+def test_gradient_checkpointing_is_active(text_model):
+    """需要梯度时必须真的走梯度检查点（transformers 只在 training=True 时启用）。"""
+    eng = make_engine(text_model, gradient_checkpointing=True)
+    eng.create_run("g", rank=4, seed=0, train_mlp=True, train_attn=True, train_unembed=False)
+    calls = {"n": 0}
+    from transformers.modeling_layers import GradientCheckpointingLayer
+
+    layers = [m for m in eng.model.modules() if isinstance(m, GradientCheckpointingLayer) and getattr(m, "gradient_checkpointing", False)]
+    assert layers, "没有找到启用了梯度检查点的层"
+    for layer in layers:
+        original = layer._gradient_checkpointing_func
+
+        def wrapped(*args, _orig=original, **kwargs):
+            calls["n"] += 1
+            return _orig(*args, **kwargs)
+
+        layer._gradient_checkpointing_func = wrapped
+    data = [text_datum(np.random.default_rng(1), 9, len(eng.tokenizer))]
+    eng.forward("g", data, "importance_sampling", None, False, True)
+    assert calls["n"] >= len(layers)
+    # 前向保持确定性：两次无梯度前向结果完全一致
+    a = eng.forward("g", data, "cross_entropy", None, False, False)["loss_fn_outputs"][0]["logprobs"]
+    b = eng.forward("g", data, "cross_entropy", None, False, False)["loss_fn_outputs"][0]["logprobs"]
+    np.testing.assert_array_equal(a, b)
+
+
+def test_failed_batch_restores_previous_gradients(text_model, monkeypatch):
+    eng = make_engine(text_model, max_tokens_per_microbatch=12)
+    eng.create_run("f", rank=4, seed=0, train_mlp=True, train_attn=True, train_unembed=False)
+    with torch.no_grad():
+        for p in eng.runs["f"].params:
+            p.add_(torch.randn_like(p) * 0.05)
+    rng = np.random.default_rng(4)
+    vocab = len(eng.tokenizer)
+    eng.forward("f", [text_datum(rng, 10, vocab)], "importance_sampling", None, False, True)
+    before = lora_grads(eng, "f")
+    original = eng._token_logprobs
+    state = {"n": 0}
+
+    def flaky(items, grad):
+        state["n"] += 1
+        if state["n"] == 2:
+            raise RuntimeError("simulated OOM")
+        return original(items, grad)
+
+    monkeypatch.setattr(eng, "_token_logprobs", flaky)
+    with pytest.raises(RuntimeError, match="simulated OOM"):
+        eng.forward("f", [text_datum(rng, 10, vocab), text_datum(rng, 11, vocab)], "importance_sampling", None, False, True)
+    torch.testing.assert_close(lora_grads(eng, "f"), before)
+
+
+def test_restore_uses_checkpoint_lora_alpha(text_model, tmp_path):
+    eng = make_engine(text_model)
+    eng.create_run("s", rank=4, seed=1, train_mlp=True, train_attn=True, train_unembed=False)
+    with torch.no_grad():
+        for p in eng.runs["s"].params:
+            p.add_(torch.randn_like(p) * 0.05)
+    datum = text_datum(np.random.default_rng(2), 10, len(eng.tokenizer))
+    ref = eng.forward("s", [datum], "cross_entropy", None, False, False)["loss_fn_outputs"][0]["logprobs"]
+    eng.save("s", str(tmp_path / "state"), kind="state")
+    other = make_engine(text_model, lora_alpha=8.0, lora_target_modules="standard")
+    other.create_run("r", rank=16, seed=5, train_mlp=False, train_attn=False, train_unembed=False, init_state=str(tmp_path / "state"))
+    out = other.forward("r", [datum], "cross_entropy", None, False, False)["loss_fn_outputs"][0]["logprobs"]
+    np.testing.assert_allclose(out, ref, atol=1e-6)
+
+
+def test_failed_create_run_reports_root_cause(text_model):
+    eng = make_engine(text_model)
+    with pytest.raises(ValueError, match="rank"):
+        eng.create_run("bad", rank=0, seed=0, train_mlp=True, train_attn=True, train_unembed=False)
+    with pytest.raises(RuntimeError, match="创建失败"):
+        eng.forward("bad", [text_datum(np.random.default_rng(0), 5, len(eng.tokenizer))], "cross_entropy", None, False, False)

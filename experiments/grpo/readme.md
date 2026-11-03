@@ -70,6 +70,7 @@ $$
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
+uv run swanlab login      # 可选；只用 --swanlab-mode disabled 时不需要
 ```
 
 如果想把脚本拎到自己的项目里跑，需要把仓库里的 `localtrio/` 目录一起带走，并按 `pyproject.toml` 安装同样的依赖。脚本里唯一和训练后端有关的一行是 `import localtrio as trio`。
@@ -93,7 +94,7 @@ SwanLab：https://swanlab.cn/
 9. 用 `importance_sampling` / `ppo` / `cispo` 之一更新模型。
 10. 记录 SwanLab，最后保存 LoRA 权重。
 
-可以先跑一个规模比较小的版本（命令都在仓库根目录执行，第一次运行会自动下载模型和 GSM8K）：
+可以先跑一个规模比较小的版本（命令都在仓库根目录执行，第一次运行会自动下载模型和 GSM8K）。用 `--swanlab-mode online` 前先 `uv run swanlab login`；没有 SwanLab 账号就改成 `--swanlab-mode disabled`。
 
 ```bash
 uv run python experiments/grpo/01-demo-sync.py \
@@ -119,7 +120,7 @@ uv run python experiments/grpo/01-demo-sync.py \
 
 ![原文在 PyTRIO 上运行时的终端输出](./images/terminal-run.png)
 
-*上图是原文在 PyTRIO 上运行时的终端输出；本地运行时还会多打印一行 `[localtrio] training run ...`，显示 run id、LoRA 作用的模块和可训练参数量。*
+*上图是原文在 PyTRIO 上运行时（训练中途）的终端输出；本地运行时在启动阶段还会多出几行 localtrio 日志：每个引擎子进程各一行 `[localtrio] starting trainer/sampler[...] on GPU N (log: ...)` 和 `[localtrio] ... ready`（默认 1 个 trainer + 3 个 sampler 副本），以及一行 `[localtrio] training run ...`（显示 run id、LoRA 作用的模块和可训练参数量）。*
 
 ### 本地资源估算
 
@@ -131,7 +132,7 @@ uv run python experiments/grpo/01-demo-sync.py \
 | GPU0（训练） | Qwen3.5-4B bf16 权重约 9～10 GB + LoRA / AdamW 状态约 1～2 GB + 激活（梯度检查点，单个 micro-batch ≤16k token），合计约 15～25 GB |
 | GPU1～3（采样） | 每张卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占约 40 GB（权重之外都是 KV cache） |
 | 首次启动 | 下载模型约 9～10 GB；4 个引擎进程加载 + vLLM 编译 / CUDA graph 捕获，约 2～5 分钟 |
-| 每个 step | `batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段可并发用满 3 个副本，会更快 |
+| 每个 step | `batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定 3 个副本都用上），会更快 |
 | 10 步试跑 | 连同启动约 10～25 分钟 |
 | 磁盘 | 每份 sampler 权重（rank 32 LoRA，bf16）几十到几百 MB，训练中的临时权重只保留最近 4 份 |
 

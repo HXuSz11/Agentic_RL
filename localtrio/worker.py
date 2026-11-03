@@ -36,7 +36,7 @@ def _serve_sync(conn: Any, engine: Any) -> None:
     while True:
         try:
             msg = conn.recv()
-        except (EOFError, OSError):
+        except Exception:  # noqa: BLE001 - 连接断开或消息损坏都按退出处理
             return
         if msg[0] == "shutdown":
             return
@@ -56,7 +56,7 @@ async def _serve_async(conn: Any, engine: Any) -> None:
         while True:
             try:
                 msg = conn.recv()
-            except (EOFError, OSError):
+            except Exception:  # noqa: BLE001 - 连接断开或消息损坏都按退出处理
                 msg = ("shutdown",)
             loop.call_soon_threadsafe(inbox.put_nowait, msg)
             if msg[0] == "shutdown":

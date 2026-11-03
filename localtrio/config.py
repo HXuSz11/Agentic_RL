@@ -92,6 +92,8 @@ class TrainerConfig:
     # vLLM ≥0.11 支持）；standard = 只用 q/k/v/o + gate/up/down（旧版 vLLM 报 LoRA 模块不支持时改用它）
     lora_target_modules: str | list[str] = "all-linear"
     lora_alpha: float = 32.0
+    # 训练端前向保持确定性（custom loss 需要两次前向一致），所有 Dropout 在计算时都关闭，
+    # 因此这里填非 0 值也不会生效
     lora_dropout: float = 0.0
     # 是否允许训练 lm_head（PyTRIO 的 train_unembed）；vLLM 的 LoRA 一般不支持，默认忽略
     allow_unembed: bool = False

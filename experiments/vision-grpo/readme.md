@@ -126,7 +126,7 @@ GeoQA 图片在送入引擎前还会经过两步处理：
 response.input_tokens == len(prompt)
 ```
 
-在 localtrio 里，`input_tokens` 是 vLLM 展开视觉占位符之后的真实 prompt 长度，所以这条检查能发现采样端与本地 image processor 对图片尺寸理解不一致的情况；训练端构造 Datum 时还会用 image processor 再校验一次 `expected_tokens`。这个对齐很重要，因为后面的 `target_tokens`、old logprobs 和 advantages 都依赖同一个位置坐标系。
+在 localtrio 里，`input_tokens` 是 vLLM 展开视觉占位符之后的真实 prompt 长度，所以这条检查能发现采样端与本地 image processor 对图片尺寸理解不一致的情况；训练端在 forward_backward 处理 Datum 时还会用 image processor 再校验一次 `expected_tokens`。这个对齐很重要，因为后面的 `target_tokens`、old logprobs 和 advantages 都依赖同一个位置坐标系。
 
 ## 2. Vision GRPO 的训练闭环
 

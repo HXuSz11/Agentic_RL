@@ -171,7 +171,7 @@ uv run python 00-prepare-data.py
 
 训练循环是全异步的：`forward_backward_async()` 和 `optim_step_async()` 提交后不阻塞等结果，日志由独立 task 消费，270 步很快就跑完。在本地版里，这些调用按提交顺序交给 GPU0 上的 trainer 子进程串行执行，语义与原版一致。
 
-> **与原文的一处实现差异**：`create_lora_training_client` 默认 `train_unembed=True`，PyTRIO 会同时训练 lm_head；localtrio 默认忽略这一项（vLLM 的 LoRA 热加载一般不支持 lm_head），只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA。这可能让本地数值和原文略有不同。
+> **与原文的一处实现差异**：`create_lora_training_client` 默认 `train_unembed=True`，PyTRIO 会同时训练 lm_head；localtrio 默认忽略这一项（vLLM 的 LoRA 热加载一般不支持 lm_head），只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA。这可能让本地数值和原文略有不同。想与原文保持一致，可在 localtrio 配置（`LOCALTRIO_CONFIG` 指向的 YAML 或本目录的 `localtrio.yaml`）中设置 `trainer: {allow_unembed: true}`，以 LoRA 形式训练 lm_head；需要当前 vLLM 能为该模型加载带 `lm_head` 的 adapter，否则采样端加载会失败（详见 [localtrio 指南](../../docs/content/guide/localtrio.md)）。
 
 ```bash
 # 在 experiments/pytrio-jev/ 目录内运行（使用默认布局：GPU0 训练）
@@ -255,7 +255,7 @@ experiments/pytrio-jev/
 ├── inference.py          # topk_prompt_logprobs 受限 softmax 推理（choice/noul/score）
 ├── calibrate.py          # calibration 划分上拟合温度 T
 ├── eval.py               # 五项基准并发评测（acc / ECE / Brier）
-├── analysis.py           # 汇总评测结果，生成对比图
+├── analysis.py           # 汇总 outputs/eval-*.json 并对照参考基线，写出 outputs/summary.md
 ├── start.md              # 从零开始的命令清单
 └── images/
 ```

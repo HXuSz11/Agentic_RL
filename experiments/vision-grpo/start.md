@@ -129,7 +129,7 @@ State 权重：/home/<you>/.cache/localtrio/runs/<run_id>/states/vision-grpo-qwe
 | `--batch-size` / `--group-size` | `4` / `4` | 每步题目数 / 每题采样数（正式实验用 8 / 8） |
 | `--max-tokens` | `64` | 每条回答最多生成 token 数（正式实验用 1024） |
 | `--learning-rate` | `4e-5` | Adam 学习率 |
-| `--max-samples` | `0` | 只用前 N 条训练数据，0 表示全部 |
+| `--max-samples` | `0` | 只用按 `--seed` 打乱后的前 N 条训练数据（即随机子集），0 表示全部 |
 | `--save-every` | `10` | 每隔多少步保存，0 表示只保存最终 checkpoint |
 | `--no-save-weights` | — | 不保存任何权重（调试用） |
 | `--show-samples` | — | 打印每条回答，检查格式与 reward |
@@ -211,7 +211,7 @@ models:
 LOCALTRIO_CONFIG=my-vision.yaml uv run python experiments/vision-grpo/train.py --steps 20 --batch-size 8 --group-size 8 --max-tokens 1024
 ```
 
-**报错“第 0 张图片 expected_tokens=…，image processor 计算为 …”。** 说明 `encode_image()` 估计的视觉 token 数和训练端不一致。确认没有改动 image processor 的分辨率参数，并且 `train.py` / `eval.py` 与引擎加载的是同一个模型目录（脚本里的 `resolve_model_dir()` 负责这件事）。
+**报错“图文 prompt 长度不一致：local=…, sampler=…”或“第 0 张图片 expected_tokens=…，image processor 计算为 …”。** 两条报错说的是同一件事：`encode_image()` 估计的视觉 token 数和引擎实际展开的数量不一致。默认的 vLLM 采样后端下通常先看到第一条，它来自 `train.py` 采样后的对齐检查，比较的是 vLLM 展开视觉占位符后的真实 prompt 长度和按 `encode_image()` 算出的本地长度；第二条来自 localtrio 的 `expand_chunks`，在训练端 `forward_backward` 处理 Datum 时触发，用 `hf` 采样后端（如 `configs/cpu-debug.yaml`）时在采样阶段就会触发。排查方法相同：确认没有改动 image processor 的分辨率参数，并且 `train.py` / `eval.py` 与引擎加载的是同一个模型目录（脚本里的 `resolve_model_dir()` 负责这件事）。
 
 **换成多图数据集时 vLLM 报图片数量超限。** 在配置里设置 `models.default.limit_mm_per_prompt: {image: 4}` 这类上限。GeoQA 每题只有一张图，默认即可。
 

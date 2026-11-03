@@ -516,10 +516,10 @@ def assemble_trajectory_tokens(trajectory: Trajectory) -> list[int]:
 def snapshot_id_of(sampling_client: Any) -> str:
     """返回一个 SamplingClient 对应的策略快照 ID。
 
-    PyTRIO 的 SamplingClient 带有远端 ``task_id``；localtrio 没有这个字段，
-    改用 ``sampling_run_cuid``（``sampler::<基模>::<LoRA 本地目录或 base>``）。
-    每次 ``save_weights_and_get_sampling_client`` 都会写一个新的本地目录，
-    因此它同样能唯一标识一个冻结的参数快照。
+    localtrio 的 ``SamplingClient.task_id`` 与 PyTRIO 同名，取值为
+    ``sampling_run_cuid``（``sampler::<基模>::<LoRA 本地目录或 base>``）；
+    每次 ``save_weights_and_get_sampling_client`` 都写新目录，
+    因此能唯一标识冻结快照。
     """
     for attribute in ("task_id", "sampling_run_cuid", "model_path"):
         value = getattr(sampling_client, attribute, None)

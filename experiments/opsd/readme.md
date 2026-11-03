@@ -506,7 +506,7 @@ rollouts = await asyncio.gather(
 )
 ```
 
-同时使用一个 `asyncio.Semaphore(32)` 统一限制 Student sampling 和 Teacher scoring 的总并发，避免一次向 vLLM 提交过多请求。localtrio 会按在途请求数把这些请求分摊到 3 个 vLLM 副本上，每个副本内部再由 vLLM 连续批处理。
+同时使用一个 `asyncio.Semaphore(32)` 统一限制 Student sampling 和 Teacher scoring 的总并发，避免一次向 vLLM 提交过多请求。localtrio 按 prompt 前 512 个 token 的哈希把每个请求固定发往某个 vLLM 副本（便于命中 prefix cache），该副本比最空闲的副本多出 8 个以上在途请求时改发到最空闲的副本；每个副本内部再由 vLLM 连续批处理。
 
 完整逻辑见 [`run_prompt_rollout_async()`](./01-opsd-async.py#L379-L476) 和 [`train()` 中的 batch gather](./01-opsd-async.py#L629-L672)。
 
@@ -569,7 +569,7 @@ advantage = -(student_logprob - teacher_logprob)
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 64 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 2～3GB，加上激活常规约 15～25GB；OPSD 每条序列约 1k token，一个 micro-batch 会装下十几条，logprob 分块可能再多占十几 GB（见快速启动的常见问题） |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 64 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 2～3GB，加上激活常规约 15～25GB（其中 lm_head 分块 logprob 约 1～3GB，`logits_chunk_size=1024`，按总 token 数分块，与 micro-batch 内序列数无关；OOM 时先调小 `max_tokens_per_microbatch`，见快速启动的常见问题） |
 | GPU1/2/3 | 3 个 vLLM 副本：Student 采样（挂 LoRA）+ Teacher logprob（不挂 LoRA） | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
 
 **训练**（每步 32 道题 × 1 条 completion，上限 1,024 token）的数量级：

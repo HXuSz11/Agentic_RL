@@ -7,6 +7,9 @@ prompt_logprobs 首位为 None）、vllm/sampling_params.py。
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
+from .sampling_params import RequestOutputKind
 
 __version__ = "0.33.0-fake"
 
@@ -25,6 +28,7 @@ class SamplingParams:
     prompt_logprobs: int | None = None
     detokenize: bool = True
     skip_special_tokens: bool = True
+    output_kind: Any = RequestOutputKind.CUMULATIVE
 
     def __post_init__(self) -> None:
         if self.top_k < -1:

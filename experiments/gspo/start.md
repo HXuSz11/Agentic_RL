@@ -85,7 +85,10 @@ uv run python experiments/gspo/eval.py
 再依次评测各个 checkpoint。`--model-path` 直接传本地目录，输出文件名保持 `aime25-gspo-step<N>.jsonl`，`analyse.py` 按这个名字识别：
 
 ```bash
-RUN_DIR=$(ls -dt ~/.cache/localtrio/runs/run_* | head -1)   # 最近一次训练
+# 按 GSPO 的 checkpoint 名找最近一次 GSPO 训练，兼容 LOCALTRIO_HOME
+LT_HOME="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"
+CKPT=$(ls -dt "$LT_HOME"/runs/run_*/sampler_weights/gspo-qwen35-4b-100steps-step-20-sampler-weights | head -1)
+RUN_DIR=$(dirname "$(dirname "$CKPT")")
 ls "$RUN_DIR/sampler_weights"
 
 for s in 20 40 60 80 100; do
@@ -94,6 +97,8 @@ for s in 20 40 60 80 100; do
       --output experiments/gspo/eval-results/aime25-gspo-step$s.jsonl
 done
 ```
+
+如果在 YAML 里改过 `home:`，或者上面没有找到目录（比如用 `--run-name` 改了 checkpoint 名），直接把训练日志 `Saved sampler weights:` 那一行路径中 `sampler_weights/` 之前的部分填给 `RUN_DIR`。
 
 评测只启动 vLLM，不加载 trainer。训练已经结束时，可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，让 4 张卡各跑一个副本。
 
@@ -109,7 +114,7 @@ uv run python experiments/gspo/analyse.py
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB；短序列多时 logprob 分块会更高 |
+| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB，其中 lm_head 分块约 1～3GB |
 | GPU1/2/3 显存 | 每卡 vLLM 预分配约 40GB（`gpu_memory_utilization=0.85`） |
 | 每步 | 约 2.5～5 分钟（64 条 rollout + 一次 custom loss 更新） |
 | 100 steps | 约 4～8 小时，不含首次下载模型和启动 vLLM |
@@ -121,7 +126,7 @@ uv run python experiments/gspo/analyse.py
 
 **GPU0（trainer）显存不足（CUDA OOM）**
 
-先调小 micro-batch 的 token 上限 `trainer.max_tokens_per_microbatch`（默认 16384）。训练后期回答变短时，一个 micro-batch 里会装下更多序列，计算 logprob 时的分块张量（序列数 × `logits_chunk_size` × 约 25 万的词表）也会变大，可以同时调小 `trainer.logits_chunk_size`（默认 1024，可依次试 512、256）。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
+先调小 micro-batch 的 token 上限 `trainer.max_tokens_per_microbatch`（默认 16384；它按 padding 后的“序列数 × 最长长度”计，回答变短不会让单个 micro-batch 的总 token 变多）。计算 logprob 时，lm_head 按展平后的 token 分块，每块是 `logits_chunk_size` × 约 25 万词表的 fp32 张量，默认 1024 时约 1～3GB，与 micro-batch 里有多少条序列无关；仍不够时再把 `trainer.logits_chunk_size` 调到 512 或 256，可再省约 1～2GB。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
 
 ```yaml
 # my-localtrio.yaml

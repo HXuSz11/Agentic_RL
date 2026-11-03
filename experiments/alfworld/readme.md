@@ -559,7 +559,7 @@ admissible / done / won
 
 [`train.py`](./train.py) 把 rollout 与 localtrio 的训练客户端串起来。
 
-[`build_trajectory_datum()`](./train.py#L260) 将完整多轮轨迹统一做一次自回归右移：
+[`build_trajectory_datum()`](./train.py#L262) 将完整多轮轨迹统一做一次自回归右移：
 
 ```text
 model_input   = full_tokens[:-1]
@@ -573,7 +573,7 @@ target_tokens = full_tokens[1:]
 assistant token:  使用 rollout old_logprob 与 trajectory advantage
 ```
 
-[`main()`](./train.py#L529) 每个 update 获取最新 LoRA sampler、执行 rollout、过滤零 advantage 轨迹、调用一次 PPO backward 和一次 optimizer step，再记录 SwanLab 指标。
+[`main()`](./train.py#L506) 每个 update 获取最新 LoRA sampler、执行 rollout、过滤零 advantage 轨迹、调用一次 PPO backward 和一次 optimizer step，再记录 SwanLab 指标。
 
 保存 checkpoint 时，`save_checkpoint()` 会同时保存 state 和 sampler weights。训练轨迹只保留在当前进程内存中，不额外写入磁盘。
 

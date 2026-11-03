@@ -81,10 +81,10 @@ uv run python experiments/medical-opd/03-medical-opd-async.py \
     --swanlab-mode online
 ```
 
-先试跑可以用 `--steps 10 --batch-size 2 --group-size 2 --sample-size 100 --save-every-steps 5 --swanlab-mode disabled`。同步版 `03-medical-opd-sync.py` 参数相同，更适合逐步调试。结束时打印 step 300 的 `state` 和 `weights` 两个目录：
+先试跑可以用 `--steps 10 --batch-size 2 --group-size 2 --sample-size 100 --save-every-steps 5 --swanlab-mode disabled`。同步版 `03-medical-opd-sync.py` 参数相同，更适合逐步调试（用同步版时保存的目录名是 `opd-medical-sync-…`，下面的 glob 两种都能匹配）。结束时打印 step 300 的 `state` 和 `weights` 两个目录：
 
 ```bash
-OPD_STATE=$(ls -d ~/.cache/localtrio/runs/*/states/opd-medical-async-*-step000300 | tail -n 1)
+OPD_STATE=$(ls -d ~/.cache/localtrio/runs/*/states/opd-medical-*-step000300 | tail -n 1)
 ```
 
 **Stage 3：Base-anchor C-Eval OPD**（从 Medical OPD 的 state 继续，Teacher = 原始 Base）：

@@ -659,7 +659,7 @@ async def main(config: GRPOConfig) -> None:
             n_degenerate = 0
 
             # batch 内每道题的 rollout 彼此独立，可以并发请求 sampler；
-            # localtrio 按在途请求数把它们分发到多个 vLLM 副本（默认 GPU1-3）。
+            # localtrio 按 prompt 前缀哈希（affinity）把不同题目分到不同 vLLM 副本（默认 GPU1-3），某个副本的在途请求比最空闲的副本多出 8 个以上时才改走最少负载路由。
             # 这里先把所有 prompt 的 sample_async 都提交出去，
             # 再用 gather 统一等待结果；gather 会保留输入顺序，方便和 batch_rows 对齐。
             rollout_tasks = [

@@ -14,7 +14,7 @@
 >
 > 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
 >
-> 文中“复现结果”一节的表格、曲线和评测数字都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
+> 文中“复现结果”一节的表格、曲线和评测数字都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“复现结果”一节的实现差异说明），复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -148,6 +148,8 @@ epsilon_high = 4e-4
 >
 > 这份实现每个 rollout batch 只做一次更新，理论上更新前的 sequence ratio 应该严格等于 1；实际不等于 1，主要来自“采样引擎算出的 logprob”和“训练引擎算出的 logprob”之间的数值差异。本地版中前者来自 vLLM（返回未经 temperature/top-p 处理的原始模型分布），后者来自 transformers 的 bf16 前向，两套 kernel 不同。GSPO 的裁剪区间只有 `[1 - 3e-4, 1 + 4e-4]`，长度归一化后的平均 log-ratio 只要超出约 `[-3e-4, 4e-4]` 就会落到裁剪区间外（是否真正截断梯度还取决于 advantage 的符号），所以本地的 `gspo/sequence_clip_fraction` 和 `gspo/seq_ratio_mean` 很可能与原文的 13.11% 不同，它们首先反映的是本地训推之间的数值差异，而不是策略变化。
 
+> **与原文的一处实现差异：** `train.py` 调用 `create_lora_training_client` 时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md)。
+
 ### AIME25 评测
 
 Base Model 和所有 checkpoint 都使用相同的评测配置：
@@ -203,7 +205,7 @@ max_tokens = 8192
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；一个 micro-batch 里短序列很多时，logprob 分块会再多占十几 GB（见快速启动的常见问题） |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB，其中 lm_head 计算 logprob 的分块在 `logits_chunk_size=1024` 时约 1～3GB，与 micro-batch 里有多少条序列无关（OOM 的处理见快速启动的常见问题） |
 | GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
 
 时间的数量级可以这样推算（正式配置：每步 8 组 × 8 条，completion 上限 4,096）：
@@ -243,6 +245,8 @@ uv run python train.py \
     --max-prompt-tokens 2048 \
     --max-tokens 4096
 ```
+
+`LOCALTRIO_CONFIG` 的相对路径按当前目录解析：在 `experiments/gspo` 下要切换 GPU 布局时写 `LOCALTRIO_CONFIG=../../configs/xxx.yaml`（在仓库根目录则写 `configs/xxx.yaml`，也可以用绝对路径）。
 
 三个角色分别跑在不同的地方：主进程（普通 Python）负责数据、reward、GSPO loss 和训练流程控制；localtrio 的 trainer 子进程在 GPU0 上执行 LoRA 前向与反向、优化器更新和 checkpoint 保存；GPU1/2/3 上的 vLLM 副本负责采样，每个 step 按路径热加载最新的 LoRA。checkpoint 是 `~/.cache/localtrio/runs/<run_id>/` 下的普通目录，训练日志里的 `Saved sampler weights:` 会打印完整路径。
 
@@ -343,7 +347,7 @@ loss 算完后，localtrio 在主进程里用 autograd 求出 `dL/dlogprob`，�
 
 GSPO 的思路很直接：保留 GRPO 的 group rollout、reward 和 relative advantage，把重要性比率与 clipping 的单位从 token 改成完整 sequence。原文用 PyTRIO 跑通了这条 custom loss 训练链路，也完成了 Base + 5 个 checkpoint 的 AIME25 评测：Step 20 的单次 Pass@12 提高了 6.66 个百分点，格式遵循率和回答长度的变化更加稳定；数学准确率是否能持续提升，还需要 matched GRPO、更多随机种子和重复评测来回答。
 
-本地版保留了同一套代码和超参数，只把训练与采样换成 localtrio 在 4×A6000 上执行。在本地复现时，除了 AIME25 指标，也建议对照 `gspo/seq_ratio_mean` 和 `gspo/sequence_clip_fraction`，确认训推数值差异没有让大部分序列在第一次更新前就被裁剪。
+本地版保留了同一套代码和超参数（输出层 `lm_head` 默认不训练，见上文的实现差异说明），把训练与采样换成 localtrio 在 4×A6000 上执行。在本地复现时，除了 AIME25 指标，也建议对照 `gspo/seq_ratio_mean` 和 `gspo/sequence_clip_fraction`，确认训推数值差异没有让大部分序列在第一次更新前就被裁剪。
 
 ## 参考资料
 

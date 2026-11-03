@@ -243,7 +243,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError(
             f"max_trajectory_tokens 不能超过 MAX_SEQUENCE_TOKENS={MAX_SEQUENCE_TOKENS}"
             "（本地没有平台单序列上限，沿用原文配置以控制训练显存；确需更长轨迹时"
-            "修改 rollout.py 中的常量，并相应调大 trainer.max_tokens_per_microbatch）"
+            "修改 rollout.py 中的 MAX_SEQUENCE_TOKENS；单条轨迹总会单独成一个 "
+            "micro-batch，GPU 0 显存主要随单条轨迹长度增长；若在配置里设置了 "
+            "models.default.max_model_len，也要同步调大）"
         )
     rollout_batch_size = args.games_per_batch * args.group_size
     if rollout_batch_size > MAX_TRAIN_BATCH_SIZE:
@@ -351,7 +353,7 @@ def build_trajectory_datum(
             "advantages": np.asarray(advantages, dtype=np.float32),
         },
     )
-    _validate_ppo_datum(datum)
+    datum.validate_loss_inputs("ppo")
     return TrainingDatum(
         datum=datum,
         num_tokens=len(input_tokens),
@@ -360,31 +362,6 @@ def build_trajectory_datum(
         group_index=trajectory.group_index,
         step_count=step_count,
     )
-
-
-def _validate_ppo_datum(datum: trio.Datum) -> None:
-    """检查 PPO Datum 的 loss 输入是否齐全、等长。
-
-    原文调用 PyTRIO 的 ``Datum.validate_loss_inputs("ppo")``；localtrio 的 Datum
-    没有这个方法（trainer 端在 forward_backward 时会再校验一次），这里在本地做
-    同样的提前检查，让错误在构造 batch 时就暴露出来。
-    """
-    inputs = datum.loss_fn_inputs
-    missing = [
-        name
-        for name in ("target_tokens", "logprobs", "advantages")
-        if name not in inputs
-    ]
-    if missing:
-        raise ValueError(f"PPO Datum 缺少 loss 输入: {missing}")
-    if inputs["target_tokens"].dtype != "int64":
-        raise ValueError("target_tokens 必须是 int64")
-    expected = datum.model_input.length
-    for name in ("target_tokens", "logprobs", "advantages"):
-        if len(inputs[name]) != expected:
-            raise ValueError(
-                f"{name} 长度 {len(inputs[name])} 与 model_input 长度 {expected} 不一致"
-            )
 
 
 def logical_step_count(trajectories: list[Trajectory]) -> int:

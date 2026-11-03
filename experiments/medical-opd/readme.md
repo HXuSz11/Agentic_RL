@@ -32,7 +32,7 @@
 
 所以我又花了一周左右，从 Medical SFT 开始设计实验，训练 Medical Teacher，尝试 Medical OPD，再一点点处理领域能力增强之后的通用能力遗忘。最后才有了这篇 Blog 里的两套方案，以及每个阶段完整的 MedQA-zh 和 C-Eval 评测结果。这一周里我从 Medical OPD 实验中获得了很多知识和反馈，也踩了不少坑。希望把这些过程写下来之后，能够帮助到同样在研究 OPD、模型蒸馏和领域能力训练的朋友。做完整个实验我大概花了 500 块钱左右吧，但这是我所有的实验操作，如果大家来复现的话大概可以在200块钱以内吧，如果只是完成 DeepMath OPD 的实验，应该只需要50 块钱吧，如果只是想要了解 OPD 的原理，简单跑几十个 step ，那应该几块钱吧？
 
-> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案在 4×A6000 上大约需要一到数天（估算，见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 在一两个小时内就能跑完。
+> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案在 4×A6000 上大约需要一到数天（估算，见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 估计一两个小时内可以跑完（同为估算，未实测，按每步约 1–1.5 分钟推算；本章的 Medical OPD 需先用 02-medical-sft.py 得到 SFT Teacher，只看原理也可以先跑 [通用 OPD 入门教程](../general-opd/readme.md) 的 demo）。
 
 我很喜欢 Thinking Machines Lab 的 Lilian Weng 写的 Blog。读她的 Blog，会感觉她正在坐在对面，慢慢讲清楚自己为什么研究这个问题、做过哪些尝试、看到了什么结果，又从结果里得出了什么判断。希望我在未来的某天也可以做到这一步～
 
@@ -577,7 +577,11 @@ step 100: 更偏医疗，同时把 C-Eval 保持在 Base 水平
 step 200: 医疗仍高于 Base，C-Eval 达到最高
 ```
 
-如果优先选择综合更均衡的结果，我会选 step 200：
+如果优先选择综合更均衡的结果，我会选 step 200（`M100 + C100`；原文在 PyTRIO 上的结果为 MedQA-zh 76.50%、C-Eval 86.00%）。本地复现时对应目录形如：
+
+```text
+~/.cache/localtrio/runs/<run_id>/sampler_weights/opd-interleaved-multi-teacher-qwen35-4b-m1-c1-ppo-steps600-step000200
+```
 
 ## 两套方案应该怎么选？
 

@@ -48,7 +48,7 @@ experiments/dapo/datasets/
 └── aime_2025/      # 30 道评测题
 ```
 
-已经有本地 parquet 时可以用 `--raw /path/to/dapo-math-17k.parquet` 跳过下载。
+已经有本地 parquet 时可以用 `--raw /path/to/dapo-math-17k.parquet` 跳过 DAPO-Math-17K 的下载；AIME25 仍会从 HuggingFace 下载（`experiments/dapo/datasets/aime_2025/` 已存在且校验通过时跳过）。
 
 ## 3. 启动训练
 
@@ -89,7 +89,7 @@ uv run python experiments/dapo/eval.py
 再评测训练得到的 sampler weights。`--model-path` 直接传本地目录：
 
 ```bash
-RUN_DIR=$(ls -dt ~/.cache/localtrio/runs/run_* | head -1)   # 最近一次训练
+RUN_DIR=$(ls -dt "${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"/runs/run_* | head -1)   # 最近一次训练（若在 YAML 里改了 home，换成对应目录）
 ls "$RUN_DIR/sampler_weights"
 
 uv run python experiments/dapo/eval.py \
@@ -103,7 +103,7 @@ uv run python experiments/dapo/eval.py \
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB；短序列多时 logprob 分块会更高 |
+| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB，其中含 lm_head 分块约 1～3GB |
 | GPU1/2/3 显存 | 每卡 vLLM 预分配约 40GB（`gpu_memory_utilization=0.85`） |
 | GRPO 每步 | 约 2～4 分钟（1 个 rollout wave + 一次 custom loss 更新） |
 | DAPO 每步 | 约 2～10 分钟（1～5 个 rollout wave，取决于补采次数） |
@@ -116,7 +116,7 @@ uv run python experiments/dapo/eval.py \
 
 **GPU0（trainer）显存不足（CUDA OOM）**
 
-先调小 micro-batch 的 token 上限 `trainer.max_tokens_per_microbatch`（默认 16384）。如果一批里有很多短回答，计算 logprob 时的分块张量（micro-batch 里的序列数 × `logits_chunk_size` × 约 25 万的词表）也会很大，可以同时调小 `trainer.logits_chunk_size`（默认 1024，可依次试 512、256）。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
+先调小 micro-batch 的 token 上限 `trainer.max_tokens_per_microbatch`（默认 16384）。计算 logprob 时 lm_head 按 `logits_chunk_size` 个 token 分块，每块是 `logits_chunk_size × 约 25 万词表` 的 fp32 logits（默认 1024 时约 1～3GB，与序列条数无关）；显存仍紧张时可以再调小 `trainer.logits_chunk_size`（默认 1024，可依次试 512、256）。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
 
 ```yaml
 # my-localtrio.yaml

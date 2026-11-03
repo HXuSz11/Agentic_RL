@@ -30,10 +30,12 @@ uv run python -m localtrio info
 uv sync --extra kernels --extra alfworld
 ```
 
+若 kernels 编译失败（缺 CUDA 工具链），可以先运行 `uv sync --extra alfworld` 继续，训练会退回较慢的纯 PyTorch 实现；详见 [快速开始](../../docs/content/guide/quickstart.md)。
+
 - `kernels`：Qwen3.5 线性注意力（Gated DeltaNet）的训练加速 kernel，强烈建议安装；
 - `alfworld`：`alfworld==0.4.2` 与 `spacy==3.8.13`，TextWorld 环境在 CPU 上运行。
 
-Python 版本以仓库根目录的 `pyproject.toml` 为准（`>=3.12`）。`swanlab login` 只在使用 `--swanlab-mode online` 时需要。检查关键依赖版本：
+Python 版本以仓库根目录的 `pyproject.toml` 为准（`>=3.12`）。`uv run swanlab login` 只在使用 `--swanlab-mode online` 时需要。检查关键依赖版本：
 
 ```bash
 uv run --extra alfworld python -c 'from importlib.metadata import version as v; [print(p, v(p)) for p in ("torch", "transformers", "peft", "vllm", "alfworld", "swanlab")]'
@@ -254,7 +256,7 @@ models:
   default:
     gpus: [1, 2, 3]
     gpu_memory_utilization: 0.80    # 默认 0.85
-    max_num_batched_tokens: 4096    # 限制单次预填充，缓解 Teacher compute_logprobs 的显存尖峰
+    max_num_batched_tokens: 1024    # 默认 2048；调小可降低 Teacher compute_logprobs 的整词表 logprob 显存尖峰（预填充会稍慢）
     max_model_len: 16384            # 与 MAX_SEQUENCE_TOKENS 对齐
 ```
 
@@ -283,4 +285,4 @@ trainer:
 
 **想看 trainer / vLLM 的详细日志。** 日志默认写到 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。
 
-**本地结果和原文不一样。** 原文结果来自 PyTRIO 云端。本地的 LoRA 实现细节（如 `lora_alpha`、作用模块、不训练 `lm_head`）、采样引擎数值和随机种子行为都可能不同，加上 ALFWorld 在线 rollout 本身方差较大，数值有差异是正常的；请以同一套本地代码跑出的 Base / checkpoint 对比为准。
+**本地结果和原文不一样。** 原文结果来自 PyTRIO 云端。本地的 LoRA 实现细节（如 `lora_alpha`、作用模块）、采样引擎数值和随机种子行为都可能不同，加上 ALFWorld 在线 rollout 本身方差较大，数值有差异是正常的；请以同一套本地代码跑出的 Base / checkpoint 对比为准。

@@ -105,7 +105,7 @@ CISPO: ratio 也会被 clip，但 clip 后只当固定权重，真正优化 logp
 
 ### 5. 在 localtrio 里，这三个 loss 怎么逐 token 计算
 
-后面的章节不会自己写 `exp(...)` 和 `clip(...)`，而是把 rollout 打包成 `Datum`，交给训练端的内置 loss：
+后面的大多数章节不会自己写 `exp(...)` 和 `clip(...)`，而是把 rollout 打包成 `Datum`，交给训练端的内置 loss；少数章节（GRPO 的 CISPO 版本、DAPO、GSPO、Tournament-GRPO）则通过 `forward_backward_custom` 在自定义 loss 里自己写 ratio 和 clip（见本节最后一条）。内置 loss 的用法如下：
 
 ```python
 import localtrio as trio

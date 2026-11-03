@@ -83,4 +83,19 @@ class AsyncLLM:
                 for r in range(1, k + 1):
                     entry[1000 + r] = Logprob(logprob=-0.1 * r, rank=r)
                 prompt_logprobs.append(entry)
-        yield RequestOutput(request_id=request_id, prompt_token_ids=ids, prompt_logprobs=prompt_logprobs, outputs=outputs)
+        from vllm.sampling_params import RequestOutputKind
+
+        if sampling_params.output_kind == RequestOutputKind.FINAL_ONLY:
+            # 与真实 vLLM 的 ParentRequest 一致：所有子请求结束后一次性返回 n 条
+            yield RequestOutput(request_id=request_id, prompt_token_ids=ids, prompt_logprobs=prompt_logprobs, outputs=outputs)
+            return
+        # CUMULATIVE（vLLM 默认）：n>1 时每次 yield 只带“本步有更新的”那个子请求
+        for i, completion in enumerate(outputs):
+            await asyncio.sleep(0)
+            yield RequestOutput(
+                request_id=request_id,
+                prompt_token_ids=ids,
+                prompt_logprobs=prompt_logprobs if i == 0 else None,
+                outputs=[completion],
+                finished=i == len(outputs) - 1,
+            )

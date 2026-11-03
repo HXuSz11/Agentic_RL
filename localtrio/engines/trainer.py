@@ -123,9 +123,14 @@ class TrainerEngine:
             model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
             if hasattr(model, "enable_input_require_grads"):
                 model.enable_input_require_grads()
+        # 注意力 dropout 一律置 0：custom loss 的两次前向、采样端与训练端都必须是确定性的
+        for module in model.modules():
+            if isinstance(getattr(module, "attention_dropout", None), float):
+                module.attention_dropout = 0.0
         self.base = model
         self.model: Any = model  # 第一个 run 创建后变成 PeftModel
         self.runs: dict[str, Run] = {}
+        self._failed_runs: dict[str, str] = {}
         self.tokenizer = load_tokenizer(self.model_dir)
         self.multimodal = is_multimodal(self.model_dir)
         self.image_processor = load_image_processor(self.model_dir) if self.multimodal else None
@@ -185,8 +190,32 @@ class TrainerEngine:
         init_state: str | None = None,
         load_optimizer: bool = False,
     ) -> dict[str, Any]:
+        self._failed_runs.pop(run_id, None)
+        try:
+            return self._create_run(run_id, rank, seed, train_mlp, train_attn, train_unembed, init_state, load_optimizer)
+        except Exception:
+            # 失败时撤销已注册的 adapter，并记下根因：之后对这个 run 的调用都会带上它
+            import traceback
+
+            self._failed_runs[run_id] = traceback.format_exc()
+            self.drop_run(run_id)
+            raise
+
+    def _create_run(
+        self,
+        run_id: str,
+        rank: int,
+        seed: int | None,
+        train_mlp: bool,
+        train_attn: bool,
+        train_unembed: bool,
+        init_state: str | None,
+        load_optimizer: bool,
+    ) -> dict[str, Any]:
         from peft import LoraConfig, get_peft_model
 
+        alpha = float(self.cfg.get("lora_alpha", 32.0))
+        saved_targets: list[str] | None = None
         if init_state is not None:
             meta = json.loads((Path(init_state) / "localtrio_meta.json").read_text())
             rank = int(meta["rank"])
@@ -194,6 +223,15 @@ class TrainerEngine:
             train_unembed = bool(meta.get("train_unembed", False))
             if meta.get("base_model") not in (None, self.base_model):
                 raise ValueError(f"checkpoint 基模 {meta.get('base_model')} 与当前 {self.base_model} 不一致")
+            # 恢复时沿用 checkpoint 自己的 LoRA 结构与缩放，不受当前配置影响
+            if meta.get("target_modules"):
+                saved_targets = [t for t in meta["target_modules"] if t != "lm_head"]
+            if meta.get("lora_alpha") is not None:
+                if float(meta["lora_alpha"]) != alpha:
+                    logger.warning("checkpoint 的 lora_alpha=%s 与当前配置 %s 不同，按 checkpoint 恢复", meta["lora_alpha"], alpha)
+                alpha = float(meta["lora_alpha"])
+            if train_unembed and not self.cfg.get("allow_unembed", False):
+                raise ValueError("该 checkpoint 训练了 lm_head（train_unembed），恢复时需要 trainer.allow_unembed: true")
         if not 1 <= rank <= 128:
             raise ValueError("LoRA rank 需要在 [1, 128] 范围内（PyTRIO 为 [4, 64]）")
         if train_unembed and not self.cfg.get("allow_unembed", False):
@@ -201,13 +239,13 @@ class TrainerEngine:
             # （Qwen3.5 多模态类没有），所以默认不训练输出层，避免采样端加载 adapter 失败。
             logger.info("train_unembed=True 被忽略（设置 trainer.allow_unembed: true 可开启，需要 vLLM 支持该模型的 lm_head LoRA）")
             train_unembed = False
-        targets = self._target_modules(train_mlp, train_attn)
+        targets = saved_targets if saved_targets is not None else self._target_modules(train_mlp, train_attn)
         if train_unembed:
             # 以 LoRA 的形式训练输出层（vLLM 不支持 modules_to_save 形式的 lm_head）
             targets = [*targets, "lm_head"]
         lora_cfg = LoraConfig(
             r=rank,
-            lora_alpha=float(self.cfg.get("lora_alpha", 32.0)),
+            lora_alpha=alpha,
             lora_dropout=float(self.cfg.get("lora_dropout", 0.0)),
             target_modules=targets,
             exclude_modules=VISION_EXCLUDE if self._has_vision else None,
@@ -320,7 +358,17 @@ class TrainerEngine:
         finally:
             setattr(parent, attr, head)
 
+    def _set_mode(self, grad: bool) -> None:
+        """需要梯度时切到 train 模式（transformers 只在 training=True 时启用梯度检查点），
+        但把所有 Dropout 保持关闭，使前向是确定性的（lora_dropout 也不生效，见配置说明）。"""
+        self.model.train(grad)
+        if grad:
+            for module in self.model.modules():
+                if isinstance(module, nn.Dropout):
+                    module.eval()
+
     def _token_logprobs(self, items: list[Prepared], grad: bool) -> list[torch.Tensor]:
+        self._set_mode(grad)
         device = self.input_device
         max_len = max(item.length for item in items)
         batch = len(items)
@@ -392,7 +440,7 @@ class TrainerEngine:
         # loss_fn_config["normalization"] 可按调用覆盖全局 trainer.loss_normalization
         mode = (loss_fn_config or {}).get("normalization") or self.cfg.get("loss_normalization", "active_tokens")
         denom = losses.denominator(loss_fn, counts, str(mode))
-        return self._run_batches(prepared, loss_fn, loss_fn_config, backward, denom, counts)
+        return self._run_batches(prepared, loss_fn, loss_fn_config, backward, denom, counts, params=run.params)
 
     @staticmethod
     def _shift(item: Prepared) -> Prepared:
@@ -412,29 +460,53 @@ class TrainerEngine:
         denom: float,
         counts: losses.TokenCounts,
         linear_grads: list[torch.Tensor] | None = None,
+        params: list[nn.Parameter] | None = None,
     ) -> dict[str, Any]:
         outputs: list[dict[str, np.ndarray] | None] = [None] * len(prepared)
         loss_sum = 0.0
-        for mb in self._microbatches(prepared):
-            items = [prepared[i] for i in mb]
-            lps = self._token_logprobs(items, grad=backward)
-            total: torch.Tensor | None = None
-            for idx, item, lp in zip(mb, items, lps, strict=True):
-                inputs = {k: v.to(lp.device) for k, v in item.inputs.items()}
-                mask = losses.valid_mask(inputs["target_tokens"], auto_shift=False)
-                if linear_grads is None:
-                    per_token = losses.per_token_loss(loss_fn, lp, inputs, loss_fn_config)
+        # 本次调用的梯度先单独累积：任一 micro-batch 失败（如 OOM）时丢掉这部分梯度、
+        # 恢复调用前已累积的梯度，避免下一次 optim_step 用上“半个 batch”
+        saved = None
+        if backward and params:
+            saved = [p.grad for p in params]
+            for p in params:
+                p.grad = None
+        try:
+            for mb in self._microbatches(prepared):
+                items = [prepared[i] for i in mb]
+                lps = self._token_logprobs(items, grad=backward)
+                total: torch.Tensor | None = None
+                for idx, item, lp in zip(mb, items, lps, strict=True):
+                    inputs = {k: v.to(lp.device) for k, v in item.inputs.items()}
+                    mask = losses.valid_mask(inputs["target_tokens"], auto_shift=False)
+                    if linear_grads is None:
+                        per_token = losses.per_token_loss(loss_fn, lp, inputs, loss_fn_config)
+                    else:
+                        g = linear_grads[idx].to(lp.device, torch.float32)
+                        per_token = torch.where(mask, g * lp.float(), torch.zeros_like(lp, dtype=torch.float32))
+                    loss_sum += float(per_token.detach().sum().item())
+                    total = per_token.sum() if total is None else total + per_token.sum()
+                    outputs[idx] = {
+                        "logprobs": torch.where(mask, lp.detach().float(), torch.zeros_like(lp, dtype=torch.float32)).cpu().numpy(),
+                        "elementwise_loss": per_token.detach().float().cpu().numpy(),
+                    }
+                if backward and total is not None:
+                    (total / denom).backward()
+        except BaseException:
+            if saved is not None:
+                for p, g in zip(params, saved, strict=True):
+                    p.grad = g
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise
+        if saved is not None:
+            for p, g in zip(params, saved, strict=True):
+                if g is None:
+                    continue
+                if p.grad is None:
+                    p.grad = g
                 else:
-                    g = linear_grads[idx].to(lp.device, torch.float32)
-                    per_token = torch.where(mask, g * lp.float(), torch.zeros_like(lp, dtype=torch.float32))
-                loss_sum += float(per_token.detach().sum().item())
-                total = per_token.sum() if total is None else total + per_token.sum()
-                outputs[idx] = {
-                    "logprobs": torch.where(mask, lp.detach().float(), torch.zeros_like(lp, dtype=torch.float32)).cpu().numpy(),
-                    "elementwise_loss": per_token.detach().float().cpu().numpy(),
-                }
-            if backward and total is not None:
-                (total / denom).backward()
+                    p.grad.add_(g)
         token_count = counts.total_active_tokens
         metrics = {
             "loss_sum": loss_sum,
@@ -462,7 +534,7 @@ class TrainerEngine:
         if mode == "same_as_builtin":
             mode = self.cfg.get("loss_normalization", "active_tokens")
         denom = losses.denominator("cross_entropy", counts, mode)
-        return self._run_batches(prepared, "cross_entropy", None, True, denom, counts, linear_grads=grad_tensors)
+        return self._run_batches(prepared, "cross_entropy", None, True, denom, counts, linear_grads=grad_tensors, params=run.params)
 
     def optim_step(self, run_id: str, adam: dict[str, float]) -> dict[str, float]:
         run = self._run(run_id)
@@ -502,24 +574,42 @@ class TrainerEngine:
     def save(self, run_id: str, path: str, kind: str) -> dict[str, Any]:
         from safetensors.torch import save_file
 
+        import shutil
+        import uuid
+
         run = self._run(run_id)
-        target = Path(path)
-        target.mkdir(parents=True, exist_ok=True)
-        weights_dtype = torch.bfloat16 if kind == "sampler" and self.dtype == "bfloat16" else None
-        save_file(self._adapter_state(run, weights_dtype), str(target / "adapter_model.safetensors"))
-        config = run.lora_config.to_dict()
-        config["base_model_name_or_path"] = self.model_dir
-        config["inference_mode"] = True
-        for key, value in list(config.items()):
-            if isinstance(value, set):
-                config[key] = sorted(value)
-        (target / "adapter_config.json").write_text(json.dumps(config, indent=2, default=str))
-        meta = {**run.meta, "kind": kind, "step": run.step, "run_id": run.run_id, "saved_at": time.time()}
-        (target / "localtrio_meta.json").write_text(json.dumps(meta, indent=2))
-        if kind == "state" and run.optimizer is not None:
-            torch.save(run.optimizer.state_dict(), target / "optimizer.pt")
-        size = sum(f.stat().st_size for f in target.iterdir() if f.is_file())
-        return {"path": str(target), "size": size}
+        final = Path(path)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        # 先写到同级临时目录，写完再整体替换：采样端永远看不到写了一半的 adapter，
+        # 同名覆盖时旧目录在替换前一直可用
+        target = final.parent / f".{final.name}.tmp-{uuid.uuid4().hex[:8]}"
+        target.mkdir()
+        try:
+            weights_dtype = torch.bfloat16 if kind == "sampler" and self.dtype == "bfloat16" else None
+            save_file(self._adapter_state(run, weights_dtype), str(target / "adapter_model.safetensors"))
+            config = run.lora_config.to_dict()
+            config["base_model_name_or_path"] = self.model_dir
+            config["inference_mode"] = True
+            for key, value in list(config.items()):
+                if isinstance(value, set):
+                    config[key] = sorted(value)
+            (target / "adapter_config.json").write_text(json.dumps(config, indent=2, default=str))
+            meta = {**run.meta, "kind": kind, "step": run.step, "run_id": run.run_id, "saved_at": time.time()}
+            (target / "localtrio_meta.json").write_text(json.dumps(meta, indent=2))
+            if kind == "state" and run.optimizer is not None:
+                torch.save(run.optimizer.state_dict(), target / "optimizer.pt")
+            size = sum(f.stat().st_size for f in target.iterdir() if f.is_file())
+            backup = None
+            if final.exists():
+                backup = final.parent / f".{final.name}.old-{uuid.uuid4().hex[:8]}"
+                final.rename(backup)
+            target.rename(final)
+            if backup is not None:
+                shutil.rmtree(backup, ignore_errors=True)
+        except BaseException:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
+        return {"path": str(final), "size": size}
 
     def _load_state(self, run: Run, path: Path, load_optimizer: bool) -> None:
         from peft import set_peft_model_state_dict
@@ -530,6 +620,10 @@ class TrainerEngine:
         unexpected = getattr(result, "unexpected_keys", []) or []
         if unexpected:
             raise RuntimeError(f"checkpoint 中有无法匹配的权重：{unexpected[:5]}")
+        # 当前 run 的 LoRA 参数里有没被 checkpoint 覆盖的（结构不一致时会静默保留随机初始化）
+        missing = [k for k in (getattr(result, "missing_keys", []) or []) if "lora_" in k and f".{run.adapter}" in k]
+        if missing:
+            raise RuntimeError(f"checkpoint 缺少当前 LoRA 结构需要的权重（共 {len(missing)} 个，例如 {missing[:3]}）")
         meta = json.loads((path / "localtrio_meta.json").read_text())
         run.step = int(meta.get("step", 0))
         if load_optimizer:
@@ -546,6 +640,8 @@ class TrainerEngine:
 
     def _run(self, run_id: str) -> Run:
         if run_id not in self.runs:
+            if run_id in self._failed_runs:
+                raise RuntimeError(f"训练 run {run_id} 创建失败，根因：\n{self._failed_runs[run_id]}")
             raise KeyError(f"训练 run {run_id} 不存在")
         return self.runs[run_id]
 

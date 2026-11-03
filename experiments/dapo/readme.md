@@ -380,9 +380,9 @@ Dynamic Sampling 最容易被一句“过滤无效样本，补到 batch 满”�
 
 1. **训练卡和采样卡轮流空转。** rollout 阶段（包括所有补采 wave）GPU0 在等；参数更新阶段，3 张采样卡在等。Dynamic Sampling 多出来的每一个 wave，都会原样加到 `time/step_seconds` 上，没有任何重叠。
 
-2. **补采 wave 很窄，却不会短多少。** 代码里每个 group 是一次 `sample_async(num_samples=8)` 请求，localtrio 按在途请求数把它路由到某一个 vLLM 副本。第一轮的 4 个 group 会分散到 3 个副本上；补采只差 1 个 group 时，这 8 条 completion 全部落在同一个副本上，另外两张采样卡空闲。而小 batch 解码主要受显存带宽限制，单条序列的解码速度和大 batch 时处在同一量级，一个 wave 的时长基本由其中最长的那条 completion 决定：只有 8 条序列的补采 wave，并不比完整的第一轮快多少。
+2. **补采 wave 很窄，却不会短多少。** 代码里每个 group 是一次 `sample_async(num_samples=8)` 请求；localtrio 按 prompt 前 512 个 token 的哈希把它固定路由到某一个 vLLM 副本（只有该副本比最空闲副本多出 8 个以上在途请求时才退回最少负载路由）。因此第一轮的 4 个 group 按哈希落位，不保证用满 3 个副本；补采只差 1 个 group 时，这 8 条 completion 全部落在同一个副本上，另外两张采样卡空闲。而小 batch 解码主要受显存带宽限制，单条序列的解码速度和大 batch 时处在同一量级，一个 wave 的时长基本由其中最长的那条 completion 决定：只有 8 条序列的补采 wave，并不比完整的第一轮快多少。
 
-3. **vLLM 的连续批处理只能合并“同时在途”的请求。** 同一轮内的 group 会被 vLLM 放进同一批解码；但下一轮补采要等上一轮 reward 判定完才提交，wave 之间没有任何并行。
+3. **vLLM 的连续批处理只能合并“同时在途”的请求。** 同一轮内落在同一副本上的 group 会被 vLLM 放进同一批解码；但下一轮补采要等上一轮 reward 判定完才提交，wave 之间没有任何并行。
 
 所以在本地，一个 DAPO step 的时间可以粗略写成：
 
@@ -436,7 +436,7 @@ prefill → autoregressive sampling → reward parsing → correctness verificat
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；一个 micro-batch 里短序列很多时，logprob 分块会再多占十几 GB（见快速启动的常见问题） |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；其中 lm_head 分块计算 logprob 约占 1～3GB（估算，见快速启动的常见问题） |
 | GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
 
 时间的数量级可以这样推算：

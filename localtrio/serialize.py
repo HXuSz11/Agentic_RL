@@ -19,10 +19,12 @@ def model_input_to_wire(model_input: ModelInput) -> list[tuple]:
     return chunks
 
 
-def datum_to_wire(datum: Datum) -> dict[str, Any]:
+def datum_to_wire(datum: Datum, keys: tuple[str, ...] | None = None) -> dict[str, Any]:
+    """``keys`` 指定要发给 trainer 的 loss 输入；其余字段（例如 custom loss 用的标量）留在本地。"""
+    items = datum.loss_fn_inputs.items() if keys is None else ((k, datum.loss_fn_inputs[k]) for k in keys if k in datum.loss_fn_inputs)
     return {
         "chunks": model_input_to_wire(datum.model_input),
-        "inputs": {name: np.asarray(t.data, dtype=np.float32 if t.dtype == "float32" else np.int64).reshape(t.shape) for name, t in datum.loss_fn_inputs.items()},
+        "inputs": {name: np.asarray(t.data, dtype=np.float32 if t.dtype == "float32" else np.int64).reshape(t.shape) for name, t in items},
     }
 
 

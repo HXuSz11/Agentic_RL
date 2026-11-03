@@ -214,7 +214,7 @@ uv run --extra alfworld python experiments/tempo/train.py \
 | `--states-per-batch` | 4 | 每次 TD 更新取几个起点；每步 Datum 数 = states × (N + K) |
 | `--warmup-updates` / `--td-updates` | 4 / 40 | 两阶段各自的步数，加起来就是总进度条 |
 | `--endpoint-samples` | 2 | 每个终点估几次取均值（拼 return 用，并非训练 group） |
-| `--save-every` | 10 | 每隔多少次 update 保存 checkpoint；最终产物始终保存 |
+| `--save-every` | 10 | TD 阶段每当全局 update 序号（含 warm-up 计数）是它的整数倍时保存 checkpoint；warm-up 阶段不保存，0 关闭中间保存，最终产物始终保存 |
 
 所有默认超参数与原文一致。[`train.py`](./train.py) 里保留了原文的 `MAX_TRAIN_BATCH_SIZE=128`：它在原文里是 PyTRIO 单次 `forward_backward` 的 batch 上限，本地没有这个平台限制，但内置 loss 按每次调用的 active token 数归一化，保留同样的分块才能让梯度尺度与原文一致（显存由 trainer 内部的 micro-batch 控制，不随它线性增长）。`states × (N + K)` 超过 128 时脚本会直接报错，这也是沿用原文的检查。单条序列上限 `MAX_SEQUENCE_TOKENS=12000`（[`rollout.py`](./rollout.py)）同理沿用原文配置。
 

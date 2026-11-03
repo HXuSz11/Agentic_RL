@@ -52,6 +52,17 @@ def cmd_download(args: argparse.Namespace) -> None:
         print(name, "->", resolve_model_path(name, cfg.model_paths, args.source or cfg.model_source))
 
 
+def _flag_value(argv: list[str], names: tuple[str, ...]) -> str | None:
+    """在转发给 vLLM 的参数里找某个选项的值（支持 ``--x N`` 和 ``--x=N``）。"""
+    for i, item in enumerate(argv):
+        for name in names:
+            if item == name and i + 1 < len(argv):
+                return argv[i + 1]
+            if item.startswith(name + "="):
+                return item.split("=", 1)[1]
+    return None
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from .config import load_config
     from .models import resolve_model_path
@@ -90,15 +101,27 @@ def cmd_serve(args: argparse.Namespace) -> None:
         cmd += ["--enable-lora", "--max-lora-rank", str(args.max_lora_rank)]
         if loras:
             cmd += ["--lora-modules", *loras]
-    cmd += args.extra
+    extra = list(args.extra)
+    dp = _flag_value(extra, ("--data-parallel-size", "-dp"))
+    api_servers = _flag_value(extra, ("--api-server-count", "-asc"))
+    if dp and int(dp) > 1 and api_servers is None:
+        # vLLM 默认按 data_parallel_size 起多个 API server，而多 API server 不能动态加载 LoRA
+        extra += ["--api-server-count", "1"]
+        api_servers = "1"
+    cmd += extra
     from .config import physical_devices
 
     env = os.environ.copy()
     if args.gpus:
         # 与配置文件一致：编号相对于当前可见的 GPU
         env["CUDA_VISIBLE_DEVICES"] = ",".join(physical_devices([int(x) for x in args.gpus.split(",") if x.strip()]))
-    # 允许评测时通过 /v1/load_lora_adapter 动态加载更多 checkpoint
-    env.setdefault("VLLM_ALLOW_RUNTIME_LORA_UPDATING", "True")
+    if not args.no_lora and int(api_servers or 1) <= 1:
+        # 允许评测时通过 /v1/load_lora_adapter 动态加载更多 checkpoint
+        env.setdefault("VLLM_ALLOW_RUNTIME_LORA_UPDATING", "True")
+    else:
+        env.pop("VLLM_ALLOW_RUNTIME_LORA_UPDATING", None)
+        if not args.no_lora:
+            print("[localtrio] api-server-count > 1：不能通过 /v1/load_lora_adapter 动态加载 LoRA，请用 --lora 预先注册", flush=True)
     print("$", " ".join(cmd), flush=True)
     print(f"OpenAI base_url: http://127.0.0.1:{args.port}/v1  模型名：{args.base_model}"
           + (f"，LoRA：{', '.join(i.split('=')[0] for i in loras)}" if loras else ""), flush=True)

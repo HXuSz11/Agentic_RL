@@ -180,6 +180,8 @@ teacher_client = service_client.create_sampling_client(
 
 本地版里，第一次创建 `teacher_client` 时 localtrio 会按 GPU 布局为 teacher 启动 vLLM 引擎。teacher 和 student 不是同一个基模时（比如默认的 27B），必须在配置里给 teacher 单独分配 GPU，脚本开头的 `check_teacher_layout()` 会提前检查这一点；如果 teacher 是 student 基模上的 LoRA，则和 student 共用同一组 vLLM，不需要额外配置。
 
+如果 teacher 是 27B 基模上训练出的 LoRA，还要多改一处：预设 `configs/4xa6000-opd-27b.yaml` 给 `Qwen/Qwen3.6-27B` 设了 `enable_lora: false`（教师默认只用基模）。需要把预设复制成自己的 YAML，把这一项改为 `true`；LoRA rank 大于默认的 `max_lora_rank: 64` 时一并调大。否则带 `--teacher-model-path` 运行时，localtrio 发出的 LoRA 请求会被未开启 LoRA 的 vLLM 引擎拒绝，报错出现在第一次 teacher `compute_logprobs` 时（此时 27B 已经加载完）。同基模（4B）的 LoRA teacher 走默认采样池，不受影响；下文[在本地运行同步版 demo](#在本地运行同步版-demo)第 5 小节的 9B 配置同样设了 `enable_lora: false`，换成 9B 上的 LoRA teacher 时同理。
+
 ### 第 3 步：从当前 student 导出 sampler
 
 训练 client 不能直接替代 rollout sampler。每个 step 开始时，代码会从当前 student 权重创建采样 client：
@@ -312,7 +314,7 @@ save_result = training_client.save_weights_for_sampler(
 print(f"Saved weights: {save_result.path}")
 ```
 
-本地版返回的是一个本地目录，例如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/opd-deepmath-qwen35-4b-sync`。它可以继续传给 sampling client 的 `model_path` 用于推理，也可以用 `python -m localtrio serve --lora <名字>=<该目录>` 挂到本地 OpenAI 兼容服务里做评测（用法见 [Medical OPD 快速启动](../medical-opd/start.md)）。
+本地版返回的是一个本地目录，例如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/opd-deepmath-qwen35-4b-sync`。它可以继续传给 sampling client 的 `model_path` 用于推理，也可以在训练结束、GPU 已释放后，用 `uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --lora opd=<该目录> --gpus 1 --port 8000` 挂到本地 OpenAI 兼容服务里做评测（用法见 [Medical OPD 快速启动](../medical-opd/start.md)）。
 
 ## 在本地运行同步版 demo
 
@@ -324,7 +326,7 @@ print(f"Saved weights: {save_result.path}")
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
-swanlab login             # 可选；也可以加 --swanlab-mode offline / disabled
+swanlab login             # 可选；不登录时运行命令要加 --swanlab-mode offline / disabled
 ```
 
 模型默认从 HuggingFace 下载，国内网络可以设置 `HF_ENDPOINT`，或 `export LOCALTRIO_MODEL_SOURCE=modelscope` 改用 ModelScope。27B teacher 约 54GB，建议先下载好：
@@ -364,7 +366,9 @@ uv run python experiments/general-opd/01-demo-sync.py \
   --swanlab-mode disabled
 ```
 
-确认能够完整保存权重后，再提高训练量：
+确认能够完整保存权重后，再提高训练量。
+
+> 下面的命令用了 `--swanlab-mode online`，需要先 `swanlab login`（或设置环境变量 `SWANLAB_API_KEY`）；不传 `--swanlab-mode` 时 SwanLab 默认也是 online，要求相同。两者都没有时，交互式终端会停下来让你选择，非交互运行（没有 TTY，比如后台任务）会直接报错。没登录就改用 `--swanlab-mode offline`（记录写到 `experiments/general-opd/swanlog/`）或 `disabled`。下文的异步版命令、第 5 小节不带 `--swanlab-mode` 的 9B 命令同理。
 
 ```bash
 LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
@@ -398,10 +402,10 @@ uv run python experiments/general-opd/01-demo-sync.py \
 
 27B 教师必须占两张卡。如果想把卡留给 student 采样，或只有 2–3 张卡，可以换成同系列更小的 teacher，例如 `Qwen/Qwen3.5-9B`（bf16 约 19–20GB，单卡即可）。teacher 变弱后 reverse KL 提供的信号也会变弱，蒸馏效果通常不如 27B，结果不能直接和原文比较；也要确认 teacher 与 student 的 tokenizer 兼容。
 
-把下面的内容保存为自己的配置文件（例如仓库根目录的 `my-opd-9b.yaml`）：
+4 张卡时，把下面的内容保存为自己的配置文件（例如仓库根目录的 `my-opd-9b.yaml`）：
 
 ```yaml
-# 4B student + 9B teacher
+# 4B student + 9B teacher（4 张卡）
 trainer:
   gpus: [0]
 models:
@@ -419,6 +423,42 @@ uv run python experiments/general-opd/01-demo-sync.py \
   --teacher-base-model Qwen/Qwen3.5-9B \
   --steps 10 --batch-size 4 --group-size 4 --max-tokens 512 --sample-size 100
 ```
+
+只有 2–3 张卡时，上面的 YAML 不能照抄：它用到了 GPU3（2 张卡时还有 GPU2），而 localtrio 不会检查配置里的 GPU 编号是否真实存在，对应的 vLLM 子进程会因为找不到 GPU 而启动失败。请按实际卡数改写。下面几种布局只是按显存推算的**估算，未实测**，保存成自己的 YAML 后，把上面命令里的 `LOCALTRIO_CONFIG` 换成该文件即可。
+
+3 张卡：student 采样只保留一个副本。
+
+```yaml
+# 4B student + 9B teacher（3 张卡，估算、未实测）
+trainer:
+  gpus: [0]
+models:
+  default:              # student 采样：GPU1
+    gpus: [1]
+  Qwen/Qwen3.5-9B:      # teacher：GPU2
+    gpus: [2]
+    enable_lora: false
+    max_model_len: 16384
+```
+
+2 张卡有两种放法。第一种参照 [`configs/1gpu.yaml`](../../configs/1gpu.yaml)，让 student 的 vLLM 和训练共用 GPU0，teacher 独占 GPU1：
+
+```yaml
+# 4B student + 9B teacher（2 张卡，student 采样与训练共用 GPU0；估算、未实测）
+trainer:
+  gpus: [0]
+  max_tokens_per_microbatch: 8192
+models:
+  default:
+    gpus: [0]
+    gpu_memory_utilization: 0.40
+  Qwen/Qwen3.5-9B:
+    gpus: [1]
+    enable_lora: false
+    max_model_len: 16384
+```
+
+第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`，同一张卡上的合计不能超过 0.96（localtrio 会拒绝超出的布局），例如 student `0.35` + teacher `0.60`。两个引擎挤在一张卡上，各自能用的 KV cache 都会变少。
 
 如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要 `LOCALTRIO_CONFIG`。
 
@@ -468,7 +508,7 @@ KL 下降只说明 student 更接近 teacher，不自动等于任务正确率提
 
 ### 2. 替换 teacher
 
-teacher 不一定必须更大，但应当在目标能力上优于 student。本地版注意：teacher 与 student 不是同一个基模时，要在 localtrio 配置里为 teacher 单独分配 GPU（参考下文的 9B teacher 配置）；同一个基模上的专家 LoRA 则与 student 共用采样池。常见选择有：
+teacher 不一定必须更大，但应当在目标能力上优于 student。本地版注意：teacher 与 student 不是同一个基模时，要在 localtrio 配置里为 teacher 单独分配 GPU（参考上文[在本地运行同步版 demo](#在本地运行同步版-demo)第 5 小节的 9B teacher 配置）；同一个基模上的专家 LoRA 则与 student 共用采样池。常见选择有：
 
 - 更大参数量的通用模型；
 - 在目标领域做过 SFT 或 RL 的模型；

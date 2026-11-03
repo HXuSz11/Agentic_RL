@@ -25,7 +25,7 @@ uv run python -m localtrio info
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
-swanlab login             # 可选；只用 --swanlab-mode disabled 时不需要
+uv run swanlab login      # 可选；只用 --swanlab-mode disabled 时不需要
 ```
 
 可以提前下载模型（约 9～10 GB），否则第一次训练时会自动下载：
@@ -72,7 +72,7 @@ uv run python experiments/grpo/01-demo-sync.py \
     --swanlab-mode online
 ```
 
-异步版（逻辑相同，batch 内所有题目并发采样，能同时用上 3 个 vLLM 副本，正式实验推荐）：
+异步版（逻辑相同，batch 内所有题目并发采样，不同题目按 prompt 哈希分到 3 个 vLLM 副本上并行生成；batch 较小时不一定 3 个副本都用上，正式实验推荐）：
 
 ```bash
 uv run python experiments/grpo/02-demo-async.py \

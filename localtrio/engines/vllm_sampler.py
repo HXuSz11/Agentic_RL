@@ -168,24 +168,47 @@ class VLLMSamplerEngine:
             detokenize=bool(return_text or stop_texts),
             skip_special_tokens=True,
         )
+        # n>1 时 vLLM 把请求拆成 n 个子请求；默认的 CUMULATIVE 模式每次只返回“本步有更新的”
+        # 子请求，最后一次 yield 只含最后结束的那几条。改用 FINAL_ONLY（结束时一次性给出全部 n
+        # 条），并在下面按 index 累积所有 yield，兼容不支持 output_kind 的旧版本。
+        try:
+            from vllm.sampling_params import RequestOutputKind
+
+            options["output_kind"] = RequestOutputKind.FINAL_ONLY
+        except ImportError:  # pragma: no cover - 旧版 vLLM
+            pass
         try:  # 新版 vLLM 用 0 表示不限制 top_k，旧版用 -1
             sampling = SamplingParams(top_k=top_k if top_k > 0 else 0, **options)
         except ValueError:
             sampling = SamplingParams(top_k=top_k if top_k > 0 else -1, **options)
+        except TypeError:
+            options.pop("output_kind", None)
+            sampling = SamplingParams(top_k=top_k if top_k > 0 else 0, **options)
         request_id = uuid.uuid4().hex
         final = None
+        prompt_logprobs_seen = None
+        completions: dict[int, Any] = {}
         async for output in self.engine.generate(
             TokensPrompt(**prompt), sampling, request_id, lora_request=self._lora_request(lora_path)
         ):
             final = output
+            for completion in output.outputs or []:
+                if completion is not None:
+                    completions[int(completion.index)] = completion
+            if getattr(output, "prompt_logprobs", None):
+                prompt_logprobs_seen = output.prompt_logprobs
         if final is None:
             raise RuntimeError("vLLM 没有返回结果")
+        if len(completions) != int(num_samples):
+            raise RuntimeError(f"vLLM 只返回了 {len(completions)} / {num_samples} 条序列（request {request_id}）")
 
         sequences = []
-        for completion in final.outputs:
+        for _, completion in sorted(completions.items()):
             tokens = [int(t) for t in completion.token_ids]
             entries = completion.logprobs or []
             logprobs = [_logprob_value(entries[i] if i < len(entries) else None, tok) for i, tok in enumerate(tokens)]
+            if any(lp != lp for lp in logprobs):  # NaN：vLLM 没给出采样 token 的 logprob
+                raise RuntimeError("vLLM 返回的采样 logprob 缺失（检查 max_logprobs / logprobs_mode 配置）")
             reason = completion.finish_reason or "length"
             sequences.append(
                 {
@@ -209,7 +232,7 @@ class VLLMSamplerEngine:
             result["input_tokens"] = len(prompt_ids)
         result["output_tokens"] = sum(len(s["tokens"]) for s in sequences)
         if want_prompt_lp:
-            raw = final.prompt_logprobs or []
+            raw = final.prompt_logprobs or prompt_logprobs_seen or []
             prompt_lp: list[float | None] = []
             topk: list[Any] = []
             for i, token in enumerate(prompt_ids):
@@ -218,7 +241,8 @@ class VLLMSamplerEngine:
                     prompt_lp.append(None)
                     topk.append(None)
                     continue
-                prompt_lp.append(_logprob_value(entry, token))
+                value = _logprob_value(entry, token)
+                prompt_lp.append(None if value != value else value)  # NaN → None
                 if topk_prompt_logprobs > 0 and isinstance(entry, dict):
                     ranked = sorted(entry.items(), key=lambda kv: getattr(kv[1], "rank", 0) or 0)
                     picked = [

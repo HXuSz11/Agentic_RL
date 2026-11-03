@@ -120,6 +120,9 @@ class Runtime:
             handle = self._trainers.get(base_model)
             if handle is not None and handle.alive:
                 return handle
+            if handle is not None:
+                # 旧 trainer 已失败：先确保它的进程组退出、显存释放，再在同一组 GPU 上重建
+                handle.shutdown(timeout=5)
             spec = {
                 "base_model": base_model,
                 "model_dir": self.model_dir(base_model),
@@ -149,12 +152,22 @@ class Runtime:
         if len(gpus) % tp != 0:
             raise LayoutError(f"{base_model}: GPU 数 {len(gpus)} 不能被 tensor_parallel_size={tp} 整除")
         util = float(engine.gpu_memory_utilization) if self.backend == "vllm" else 0.3
+        if util > 0.98:
+            raise LayoutError(f"{base_model}: gpu_memory_utilization={util} 过高（最大 0.98）")
         for gpu in gpus:
-            if self._gpu_usage.get(gpu, 0.0) + util > 0.96:
+            used = self._gpu_usage.get(gpu, 0.0)
+            if used > 0 and used + util > 0.98:
                 raise LayoutError(
-                    f"GPU {gpu} 已被其他采样引擎占用（已用 {self._gpu_usage[gpu]:.2f}，再加 {util:.2f} 超过显存）。\n"
+                    f"GPU {gpu} 已被其他采样引擎占用（已用 {used:.2f}，再加 {util:.2f} 超过显存）。\n"
                     f"{base_model} 需要独立的 GPU：请在 localtrio.yaml 的 models 下为它单独配置 gpus，"
                     f"例如 configs/ 目录里的 OPD 预设（trainer→0，学生→1，教师→2,3）。"
+                )
+            if gpu in (self.cfg.trainer.gpus or []) and util > 0.6:
+                logger.warning(
+                    "%s 的采样引擎与训练共用 GPU %d，且 gpu_memory_utilization=%.2f；训练端可能显存不足（参考 configs/1gpu.yaml）",
+                    base_model,
+                    gpu,
+                    util,
                 )
         for gpu in gpus:
             self._gpu_usage[gpu] = self._gpu_usage.get(gpu, 0.0) + util

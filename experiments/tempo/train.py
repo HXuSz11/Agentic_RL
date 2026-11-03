@@ -183,7 +183,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--save-every",
         type=int,
         default=10,
-        help="每隔多少次 update 保存；0 关闭中间保存，最终产物始终保存",
+        help="TD 阶段按全局 update 序号（含 warm-up）每隔多少次保存；warm-up 阶段不保存；0 关闭中间保存，最终产物始终保存",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--run-name", default="tempo-alfworld-qwen35-4b")
@@ -227,7 +227,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError(
             f"max_trajectory_tokens 不能超过 MAX_SEQUENCE_TOKENS={MAX_SEQUENCE_TOKENS}"
             "（本地没有平台单序列上限，沿用原文配置以控制训练显存；确需更长轨迹时"
-            "修改 rollout.py 中的常量，并相应调大 trainer.max_tokens_per_microbatch）"
+            "修改 rollout.py 中的 MAX_SEQUENCE_TOKENS。超过 trainer.max_tokens_per_microbatch "
+            "的单条序列会自动单独成一个 micro-batch，无需调大该值；训练显存不足时调小 "
+            "trainer.logits_chunk_size，并确认 vLLM 的 max_model_len 不小于新上限）"
         )
     if args.states_per_batch * (args.branches + args.critic_samples) > MAX_TRAIN_BATCH_SIZE:
         raise ValueError(
