@@ -332,13 +332,13 @@ SwanLab：[Base 生成](https://swanlab.cn/@MRLE/tournament-grpo/runs/5cqbugvp)�
 | 项目 | 估算（未实测） |
 | --- | --- |
 | GPU 布局 | 内置默认布局（即 `configs/4xa6000.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
-| GPU0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 20–35 GB |
+| GPU0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 15–25 GB（与[硬件规划](../../docs/content/guide/hardware.md)口径一致） |
 | GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB |
 | 单个 step | rollout 约 3–6 分钟 + 裁判 224 场约 7 分钟（外部 API，与原文相近）+ 训练约 4–7 分钟（自定义 loss 要做两次前向） |
 | 20 step | 约 5–7 小时 |
 | Deep Research Bench 生成 100 题 | 约 5–20 分钟（每题贪心 1 条轨迹） |
 
-训练时 4 张卡都被占用；想用本机模型当裁判，需要先把采样缩到两张卡，详见[快速启动指南](./start.md)的“可选：本地裁判”一节。
+训练时 4 张卡都被占用；想用本机模型当裁判，需要先把采样缩到两张卡，详见[快速启动指南第 6 节“可选：用本机模型当裁判”](./start.md#6-可选用本机模型当裁判)。
 
 ## 7. 训练时最应该看哪些指标？
 

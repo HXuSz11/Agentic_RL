@@ -1,6 +1,6 @@
 # Spec-o3 快速开始
 
-按顺序完成：安装环境 → 确认 GPU 布局 → 下载数据 → SFT 冷启动 → GRPO → 评测。
+按顺序完成：安装环境并下载基模 → 确认 GPU 布局 → 下载数据 → SFT 冷启动 → GRPO → 评测。
 
 本页是本地 4×RTX A6000（48GB）版：SFT、GRPO 与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在自己的 GPU 上（图文输入走 `ImageChunk`），光谱绘图工具在本机 CPU 上运行。原理与原文结果见 [readme.md](./readme.md)，原文公开的训练曲线见 [SwanLab](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)。
 
@@ -11,6 +11,7 @@
 ```bash
 uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
 uv run python -m localtrio info  # 查看 GPU、vLLM 版本与当前布局
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重；训练 9B 时再加 Qwen/Qwen3.5-9B
 cd experiments/spec-o3
 uv run swanlab login             # 可选；训练命令改用 --swanlab-mode disabled 时可跳过
 ```
@@ -18,7 +19,8 @@ uv run swanlab login             # 可选；训练命令改用 --swanlab-mode di
 **后续命令都在 `experiments/spec-o3/` 中执行。**
 
 - 不需要 `trio login`、`PYTRIO_API_KEY`，也没有训练计费。
-- 训练基模由 localtrio 自动下载（默认 HuggingFace；国内可设 `LOCALTRIO_MODEL_SOURCE=modelscope`）。另外，`train_sft.py`、`train_rl.py`、`eval.py` 会直接用 `transformers` 从 Hugging Face 读取 tokenizer 与 image processor（可按 `--model-revision` 固定版本），国内网络请设置 `export HF_ENDPOINT=https://hf-mirror.com`。
+- **首次训练或评测前，必须先用上面的 `localtrio download` 下载基模权重**（9B 实验执行 `uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.5-9B --source huggingface`）。原因是 `train_sft.py`、`train_rl.py`、`eval.py` 会先用 `transformers` 从 Hugging Face 读取 tokenizer 与 image processor（可按 `--model-revision` 固定版本），HF 缓存里因此会留下一个只含这些文件、没有权重的快照；localtrio 默认的 `auto` 模式会把它当成已缓存的模型，训练端和 vLLM 找不到权重而启动失败。如果之前已经这样失败过，执行同一条 `download` 命令即可补全。
+- 国内网络请设置 `export HF_ENDPOINT=https://hf-mirror.com`，tokenizer 读取和上面的 `download` 都会走镜像。也可以改从 ModelScope 下载：`download` 时用 `--source modelscope`，并且后续训练和评测命令前都要加 `LOCALTRIO_MODEL_SOURCE=modelscope`（或在 YAML 里写 `model_source: modelscope`）；只改下载来源不够，`auto` 模式会先查 HF 缓存，仍会命中上面那个不完整的快照。
 - `prepare_data.py` 会在脚本内把 `HF_ENDPOINT` 固定为 `https://huggingface.co`（原版设置），下载数据时需要能访问 Hugging Face 官方站点。
 
 ## 2. GPU 布局
@@ -236,13 +238,15 @@ LOCALTRIO_CONFIG=my-spec-o3.yaml uv run python train_rl.py ...
 
 **长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是为 `compute_logprobs` 控制显存尖峰设的；本章只做生成、不算 prompt logprob，可以调到 8192 加快多轮图文长 prompt 的预填充。
 
-**vLLM 报单个 prompt 的图片数超限**：一条轨迹最多 1 张初始图 + 7 张工具图，在 `models.default` 下设置 `limit_mm_per_prompt: {image: 8}`。
+**vLLM 报单个 prompt 的图片数超限**：localtrio 默认 `limit_mm_per_prompt: {image: 8, video: 0}`，正好覆盖 `--max-turns 8`（1 张初始图 + 7 张工具图），按本页命令不会超限。把 `--max-turns` 调到 N>8 时，在 `models.default` 下设置 `limit_mm_per_prompt: {image: N, video: 0}`；这一项会整体替换默认值，记得保留 `video: 0`，否则 vLLM 会重新为视频预留编码显存。
 
 **训练端报 `expected_tokens` 与 image processor 不一致**：`expected_tokens` 由脚本用 Hugging Face 上的 image processor 计算，训练端用 localtrio 下载的模型目录里的 processor 校验。两边的模型版本需要一致：确认 `--model-revision` 与 localtrio 下载的版本对应，或在 localtrio 配置的 `model_paths` 里指向同一份本地快照。
 
 **vLLM 加载 LoRA 时报 target modules 不支持**：把 `trainer.lora_target_modules` 改成 `standard`（只训练 q/k/v/o + MLP），从 SFT 重新训练。
 
-**loss 归一化和原文注释不一致？** 脚本按原版“服务端求和”的口径先除以整批 assistant token 数；localtrio 默认还会按整批 active token 数归一化，梯度整体多一个常数缩放，对 Adam 影响很小。想严格按原注释口径，在 YAML 里加 `trainer.loss_normalization: sum`。
+**loss 归一化和原文注释不一致？** 脚本按原版“服务端求和”的口径先除以整批 assistant token 数；localtrio 默认（`trainer.loss_normalization: active_tokens`，与 PyTRIO 0.2.9 文档一致）还会再除以该批 active token 数：SFT 为该批 assistant token 数，RL 为该批全部非 `-100` 位置（含问题、图片和工具观察）。这个因子随 batch 变化（RL 中还随轨迹长度和被跳过的组数变化），会改变各步更新的相对大小，并不是一个常数缩放。想按原注释口径（逐 token 平均）训练，在 YAML 里加 `trainer.loss_normalization: sum`。
+
+**本地训练的参数范围和原文不完全相同？** 是的。`train_sft.py` 创建训练客户端时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`；localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，RL 从 SFT state 继续，也沿用这组模块。本地结果可能因此与原文不同。想尽量对齐，可在 YAML 里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个多模态模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md)。
 
 **`--state-path` / `--model-path` 报错**：`--state-path` 要传 `states/` 下的目录，`--model-path` 要传 `sampler_weights/` 下的目录；原文的 `trio://` 路径和 PyTRIO 权重控制台在本地版都不存在。
 

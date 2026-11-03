@@ -65,8 +65,9 @@ def build_training_batch(rows, tokenizer, processor):
 
     # 原版按“cross_entropy 在服务端求和”编写；归一化后得到按监督 token 平均的梯度。
     # localtrio 默认（trainer.loss_normalization: active_tokens，与 PyTRIO 0.2.9 文档一致）
-    # 还会再除以整批 active token 数，梯度整体多缩小一个常数，Adam 对此基本不敏感；
-    # 想与原注释完全一致，可在配置里设 trainer.loss_normalization: sum。代码保持原样。
+    # 还会再除以该批 active token 数（SFT 中即该批 assistant token 数）。这个因子随 batch 变化，
+    # 会改变各步更新的相对大小，并不是常数缩放；想按原注释口径（逐 token 平均）训练，
+    # 可在配置里设 trainer.loss_normalization: sum。代码保持原样。
     for datum in data:
         datum.loss_fn_inputs["weights"] = trio.types.TensorData.from_numpy(
             datum.loss_fn_inputs["weights"].to_numpy() / tokens,

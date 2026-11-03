@@ -189,7 +189,7 @@ Format 没有到 100% 的主要原因不是模型学不会，而是预算：AIME
 | GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB（`gpu_memory_utilization=0.85`） |
 | CPU | 沙箱默认 8 个并发子进程（`--sandbox-workers`），每段代码最长 30 秒 |
 | 单个 step | rollout 最多 6 轮串行生成 + 代码执行，约 2–4 分钟；训练约 1–1.5 分钟 |
-| 20 step / 200 step | 约 1–1.7 小时 / 约 10–17 小时 |
+| 20 step / 200 step | 约 1–1.8 小时 / 约 10–18 小时 |
 | AIME25 评测一次 | 360 条轨迹，约 10–25 分钟 |
 
 ## ReTool 的训练闭环详细拆解
@@ -329,7 +329,7 @@ sandbox/latency:       0.36s → 1.4s  # 代码变复杂，执行时间自然变
 ```bash
 uv sync --extra kernels          # 含 torch / transformers / peft / vllm，kernels 为 Qwen3.5 线性注意力训练加速
 uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
-swanlab login                    # 可选；用 --swanlab-mode disabled 可跳过
+uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
 不需要 `trio login`，也没有训练计费：GPU0 跑 LoRA 训练，GPU1/2/3 跑 vLLM 采样，代码解释器跑在本地 subprocess 沙箱里，不需要任何配置文件。
@@ -340,14 +340,15 @@ swanlab login                    # 可选；用 --swanlab-mode disabled 可跳�
 uv run python experiments/retool/prepare_data.py
 ```
 
-脚本会下载 `BytedTsinghua-SIA/DAPO-Math-17k` 并导出：
+脚本默认从 HuggingFace Hub 加载 `BytedTsinghua-SIA/DAPO-Math-17k`（原始数据存在 HF 缓存目录，默认 `~/.cache/huggingface/`；国内网络可以设置 `HF_ENDPOINT` 指向镜像），并导出：
 
 ```text
 experiments/retool/datasets/
-├── raw/dapo-math-17k.parquet   # 原始数据
 ├── train.jsonl                  # 训练集（question + answer）
 └── dev.jsonl                    # 50 条开发集
 ```
+
+`datasets/raw/dapo-math-17k.parquet` 是可选输入：网络不稳时先手动下载到这里，脚本会优先读取它。
 
 AIME25 评测集复用 OPSD 章节的数据脚本：
 
@@ -364,7 +365,7 @@ uv run python experiments/retool/train.py \
     --run-name retool-qwen35-4b-step20
 ```
 
-20 个 step 足够确认闭环：correct 上升、code_calls 上升、degenerate group 为 0。
+原文在 PyTRIO 上 20 个 step 就能看到 correct 与 code_calls 上升、degenerate group 为 0；本地后端不同，结果可能有差异，可以用 SwanLab 中的 `reward/correct`、`rollout/code_calls`、`rollout/degenerate_group_rate`（终端也会打印 correct / code_calls）判断闭环是否成立。
 
 ### 4. 把轨迹跑满 200 step
 
@@ -407,7 +408,31 @@ uv run python experiments/retool/eval.py \
 
 ### 6. 绘制 checkpoint 对比图
 
-当 `eval-results/` 里集齐 Base 和各 Step 的 JSONL 后：
+[`analysis.py`](./analysis.py) 要求 `eval-results/` 里 6 个文件齐全：`aime25-retool-{base,step20,step50,step100,step150,step200}.jsonl`，缺任何一个都会报 `FileNotFoundError`，各文件的 `--val-n` 也必须一致。上一步只有 Base 和 step200，还要用同样的参数补评 4 个 checkpoint（`<run_id>` 换成对应那次训练的真实目录，两次训练的 run_id 不同）：
+
+```bash
+# step20：来自第 3 步的 20-step 验证跑
+uv run python experiments/retool/eval.py \
+    --mode retool \
+    --val-n 12 \
+    --temperature 1.0 \
+    --top-p 0.7 \
+    --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/retool-qwen35-4b-step20-final-weights \
+    --output experiments/retool/eval-results/aime25-retool-step20.jsonl
+
+# step50 / step100 / step150：来自第 4 步 200-step 训练的中间 checkpoint
+for step in 50 100 150; do
+  uv run python experiments/retool/eval.py \
+      --mode retool \
+      --val-n 12 \
+      --temperature 1.0 \
+      --top-p 0.7 \
+      --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/retool-qwen35-4b-step200-step-${step}-weights \
+      --output experiments/retool/eval-results/aime25-retool-step${step}.jsonl
+done
+```
+
+6 个文件齐全后：
 
 ```bash
 uv run python experiments/retool/analysis.py

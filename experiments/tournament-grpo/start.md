@@ -111,6 +111,8 @@ uv run python experiments/tournament-grpo/train.py \
   --run-name tournament-grpo-20step-resumed
 ```
 
+续训后 `checkpoint-step-20.json` 位于 `outputs/tournament-grpo-20step-resumed/`，第 5 节评测的 `--checkpoint` 要改成 `experiments/tournament-grpo/outputs/tournament-grpo-20step-resumed/checkpoint-step-20.json`。
+
 **输出在哪里：** 训练日志位于 `experiments/tournament-grpo/outputs/<run-name>/`：
 
 ```text
@@ -131,7 +133,7 @@ checkpoint-step-*.json      # 记录 state_path 与 sampler_path
 }
 ```
 
-目录根可用 `LOCALTRIO_HOME` 改到大容量磁盘；移动权重目录后要同步修改 JSON 里的路径。引擎日志在 `~/.cache/localtrio/logs/`。
+目录根可用 `LOCALTRIO_HOME` 改到大容量磁盘；移动权重目录后要同步修改 JSON 里的路径。引擎日志在 `<LOCALTRIO_HOME>/logs/`（默认 `~/.cache/localtrio/logs/`）。
 
 ## 5. Deep Research Bench 评测
 
@@ -181,7 +183,7 @@ experiments/tournament-grpo/outputs/drb/Qwen--Qwen3.5-4B/
 
 ```bash
 # 终端 1：GPU3 上启动裁判服务
-uv run python -m localtrio serve --base-model <裁判模型> --gpus 3 --port 8001 --max-model-len 32768
+uv run python -m localtrio serve --base-model <裁判模型> --gpus 3 --port 8001 --max-model-len 32768 --no-lora
 
 # 终端 2：训练时采样只用 GPU1、GPU2
 LOCALTRIO_SAMPLER_GPUS=1,2 uv run python experiments/tournament-grpo/train.py \
@@ -198,13 +200,15 @@ TOURNAMENT_JUDGE_MODEL_NAME=<裁判模型，与 --base-model 相同>
 TOURNAMENT_JUDGE_API_KEY=
 ```
 
-裁判模型的要求：非思考（Instruct）模型，输出里不能夹带推理过程，否则胜者解析会出错；bf16 权重放得进单张 48GB 卡（约 20B 参数以内，如 14B 级 Instruct 模型）；上下文至少能放下 rubric 加两份候选报告（建议 `--max-model-len 32768`）。作者原版用的是 Qwen2.5-72B-Instruct，单卡放不下。
+裁判模型的要求：非思考（Instruct）模型，输出里不能夹带推理过程，否则胜者解析会出错；上下文至少能放下 rubric 加两份候选报告（建议 `--max-model-len 32768`）；bf16 权重约 14B 以内，才能在单张 48GB 卡上留出 32K 上下文的 KV cache（估算，未实测）。20B 级模型需要量化，或改成双卡张量并行（例如 `--gpus 2,3 --tp 2`，此时训练采样只留 GPU1：`LOCALTRIO_SAMPLER_GPUS=1`）。作者原版用的是 Qwen2.5-72B-Instruct，单卡放不下。命令里的 `--no-lora` 表示只服务基模，不预留 LoRA 显存。
 
-**评测的 RACE 打分**发生在训练结束之后，4 张卡都空闲，可以起更大的评分模型，例如 4 卡张量并行（显存是否够用取决于模型，未实测）：
+**评测的 RACE 打分**发生在训练结束之后，4 张卡都空闲，可以起更大的评分模型，例如 4 卡张量并行（显存是否够用取决于模型，未实测）。评分模型要选原生上下文 ≥64K 的非思考 Instruct 模型，例如 Qwen3-30B-A3B-Instruct-2507（4 卡张量并行放得下，估算）：
 
 ```bash
-uv run python -m localtrio serve --base-model <评分模型> --gpus 0,1,2,3 --tp 4 --port 8001 --max-model-len 32768
+uv run python -m localtrio serve --base-model <评分模型> --gpus 0,1,2,3 --tp 4 --port 8001 --max-model-len 65536 --no-lora
 ```
+
+上下文要开到 65536：RACE 每次请求固定 `max_tokens=8192`，最长的参考报告 prompt 约 2.5 万 token（按 Qwen3 tokenizer 估算），用 32768 时少数题会被 vLLM 拒绝（较早的版本如 0.30 及以前直接返回 400）或输出被截断（较新的版本如 0.33 会把输出预算截短），`score` 会在这几题反复中止。不建议写 `--max-model-len 0`：它会用模型自带的上限（Qwen3-2507 系列为 256K），有些模型的 KV cache 放不下，启动会失败。原生只有 32K 的模型（如 Qwen2.5-72B-Instruct）不适合直接当这里的评分模型。
 
 ```dotenv
 RACE_JUDGE_API_URL=http://127.0.0.1:8001/v1/chat/completions
@@ -220,7 +224,7 @@ RACE 脚本遇到 `reasoning_content` 会直接报错，同样要用非思考模
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU0 训练显存 | 单条轨迹最长约 2.2 万 token，峰值约 20–35 GB |
+| GPU0 训练显存 | 单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），峰值约 15–25 GB（与[硬件规划](../../docs/content/guide/hardware.md)口径一致） |
 | GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB |
 | 单个 step | rollout 约 3–6 分钟 + 裁判约 7 分钟 + 训练约 4–7 分钟 |
 | 20 step | 约 5–7 小时 |
@@ -248,4 +252,4 @@ LOCALTRIO_CONFIG=my-tournament.yaml uv run python experiments/tournament-grpo/tr
 
 **Jina 读网页很慢**：无 Key 时限速 20 RPM，跨进程共享；填 `JINA_API_KEY` 并把 `JINA_RATE_LIMIT_RPM` 调到 500。
 
-**`--checkpoint` 报权重目录不存在**：JSON 里的 `sampler_path` 是本机绝对路径，换机器或改了 `LOCALTRIO_HOME` 后需要手动修改。原文的 `trio://` checkpoint 不能在本地版使用。
+**`--checkpoint` 报“不是 LoRA 权重目录（缺少 adapter_config.json）”**：JSON 里的 `sampler_path` 是本机绝对路径，换机器或移动了 runs 目录后需要手动修改 `sampler_path`。原文的 `trio://` checkpoint 不能在本地版使用。

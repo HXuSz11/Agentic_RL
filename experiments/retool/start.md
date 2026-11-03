@@ -41,11 +41,12 @@ uv run python experiments/opsd/00-datasets.py --only aime25
 
 ```text
 experiments/retool/datasets/
-├── raw/dapo-math-17k.parquet   # 原始数据
 ├── train.jsonl                  # 训练集（question + answer）
 └── dev.jsonl                    # 50 条开发集
 experiments/opsd/datasets/aime_2025/   # AIME25，30 题（eval.py 默认读取这里）
 ```
+
+`prepare_data.py` 默认从 HuggingFace Hub 加载 `BytedTsinghua-SIA/DAPO-Math-17k`，原始数据存在 HF 缓存目录（默认 `~/.cache/huggingface/`），不会写进 `datasets/`；国内网络可以设置 `HF_ENDPOINT` 指向镜像。`datasets/raw/dapo-math-17k.parquet` 是可选输入：网络不稳时先手动下载到这里，脚本会优先读取它。
 
 ## 4. 训练
 
@@ -111,7 +112,31 @@ uv run python experiments/retool/eval.py \
 - 先加 `--limit 2` 可以快速检查流程。
 - 输出 JSONL 每行一道题，最后一行是 `type=summary`（Average@N、Pass@N、Format、代码调用统计）；retool 模式按 `--chunk-size` 道题一批逐批落盘。
 
-画 checkpoint 对比图（文件名需与 [`analysis.py`](./analysis.py) 里的 `CHECKPOINTS` 一致，如 `aime25-retool-step20.jsonl`）：
+画 checkpoint 对比图前，[`analysis.py`](./analysis.py) 要求 `eval-results/` 里 `CHECKPOINTS` 列出的 6 个文件齐全（`aime25-retool-{base,step20,step50,step100,step150,step200}.jsonl`），缺任何一个都会报 `FileNotFoundError`，而且各文件的 `--val-n` 必须一致。除了上面的 Base 和 step200，还要评测 4 个 checkpoint（`<run_id>` 换成对应那次训练的真实目录，两次训练的 run_id 不同）：
+
+```bash
+# step20：来自 20-step 验证跑（--run-name retool-qwen35-4b-step20）的最终 checkpoint
+uv run python experiments/retool/eval.py \
+    --mode retool \
+    --val-n 12 \
+    --temperature 1.0 \
+    --top-p 0.7 \
+    --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/retool-qwen35-4b-step20-final-weights \
+    --output experiments/retool/eval-results/aime25-retool-step20.jsonl
+
+# step50 / step100 / step150：来自 200-step 完整训练（--save-every 50）的中间 checkpoint
+for step in 50 100 150; do
+  uv run python experiments/retool/eval.py \
+      --mode retool \
+      --val-n 12 \
+      --temperature 1.0 \
+      --top-p 0.7 \
+      --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/retool-qwen35-4b-step200-step-${step}-weights \
+      --output experiments/retool/eval-results/aime25-retool-step${step}.jsonl
+done
+```
+
+6 个文件齐全后画图：
 
 ```bash
 uv run python experiments/retool/analysis.py --output experiments/retool/eval-results/local_checkpoints.png
@@ -128,7 +153,7 @@ uv run python experiments/retool/analysis.py --output experiments/retool/eval-re
 | GPU0 训练显存 | 约 15–25 GB（4B bf16 权重约 9 GB + LoRA/AdamW + 激活，单条 ≤ 8,192 token） |
 | GPU1–3 采样显存 | 每卡约 40 GB（vLLM 按 `gpu_memory_utilization=0.85` 预占） |
 | 单个 step | rollout（最多 6 轮串行生成 + 代码执行）约 2–4 分钟 + 训练约 1–1.5 分钟 |
-| 20 step / 200 step | 约 1–1.7 小时 / 约 10–17 小时 |
+| 20 step / 200 step | 约 1–1.8 小时 / 约 10–18 小时 |
 | AIME25 评测一次 | 360 条轨迹，约 10–25 分钟 |
 
 ## 7. 常见问题
@@ -148,7 +173,7 @@ LOCALTRIO_CONFIG=my-retool.yaml uv run python experiments/retool/train.py ...
 
 **loss 归一化和原文不完全一样？** `train.py` 按原版 PyTRIO“每次请求内对样本取 mean”的约定缩放 advantage；localtrio 默认按每次请求的 active token 数归一化。想严格按逐样本均值，在 YAML 里加 `trainer.loss_normalization: samples`。默认设置与 PyTRIO 0.2.9 文档的口径一致，详见 [localtrio 指南](../../docs/content/guide/localtrio.md)。
 
-**`--model-path` 报“不是 LoRA 权重目录”**：要传 `sampler_weights/` 下的目录，而不是 `states/`；也不能再用原文的 `trio://` 路径。
+**`--model-path` 报“不是 LoRA 权重目录（缺少 adapter_config.json）”**：说明该路径下没有 `adapter_config.json`，通常是 run_id 或 checkpoint 名写错、目录不存在，或者只写到了 `sampler_weights/` 这一层，没写到具体的 checkpoint 目录。请直接复制训练终端 `Saved sampler weights:` 那一行的完整路径。评测建议用 `sampler_weights/`（bf16，体积更小），但 `states/` 目录本身也能通过这个检查。原文的 `trio://` 路径会报另一个错误：“是 PyTRIO 云端路径”。
 
 **沙箱超时或 CPU 被打满**：调小 `--sandbox-workers`；沙箱子进程已把 BLAS 线程数压到 1。不要无人值守运行：文件读写只靠 system prompt 约束。
 

@@ -122,17 +122,18 @@ Spec-o3 将这种过程称为 iMCoT，即 Interleaved Multimodal Chain-of-Though
 
 ### 快速开始：先把 SFT 跑起来
 
-想先动手的读者，安装好 UV 后，在仓库根目录执行 `uv sync --extra kernels`，再执行下面的命令。不需要 `trio login`；SwanLab 登录是可选的：
+想先动手的读者，安装好 UV 后，在仓库根目录执行 `uv sync --extra kernels`，再执行下面的命令。不需要 `trio login`，但首次训练前必须先用 `localtrio download` 下载基模权重。SwanLab 默认 online 模式需要先登录；不登录时请给训练命令加 `--swanlab-mode disabled`：
 
 ```bash
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重
 cd experiments/spec-o3
-uv run swanlab login            # 可选
+uv run swanlab login            # 可选；不登录时下面的训练命令加 --swanlab-mode disabled
 
 uv run python prepare_data.py sft
 uv run python train_sft.py --epochs 2
 ```
 
-这会将 SFT 数据和图片下载到 `datasets/sft/`，然后使用默认的 Qwen3.5-4B LoRA 配置，在 GPU0 上启动 2 个 epoch 的冷启动训练。每轮结束后，终端会打印继续训练用的 `state_path` 和推理评测用的 `sampler_path`，两者都是本地目录（`~/.cache/localtrio/runs/<run_id>/states/...` 和 `.../sampler_weights/...`）。
+这会先把 Qwen3.5-4B 权重下载到本机缓存，再将 SFT 数据和图片下载到 `datasets/sft/`，然后使用默认的 Qwen3.5-4B LoRA 配置，在 GPU0 上启动 2 个 epoch 的冷启动训练。每轮结束后，终端会打印继续训练用的 `state_path` 和推理评测用的 `sampler_path`，两者都是本地目录（`~/.cache/localtrio/runs/<run_id>/states/...` 和 `.../sampler_weights/...`）。
 
 接下来可以继续阅读实现细节。数据划分、完整训练参数、如何接上 RL，以及评测和绘图命令，都放在[第 8 节：如何运行这次实验](#8-如何运行这次实验)。
 
@@ -300,7 +301,7 @@ $$
 
 一条轨迹中的 assistant token 共享该轨迹的 advantage。问题、图片、工具观察和程序补入的分隔符只作为上下文，对应的 advantage 为零。随后整批 Datum 交给内置 `ppo` loss（localtrio 与 PyTRIO 同名同语义），裁剪范围为 `[0.8, 1.2]`，每批更新一次。
 
-> **本地版说明：** `train_rl.py` 和 `train_sft.py` 都先手动把 advantage / weights 除以整批 assistant token 数，原版注释按“服务端对 loss 求和”的口径编写。localtrio 默认按整批 active token 数归一化（与 PyTRIO 0.2.9 文档一致），因此梯度会整体多一个常数缩放；Adam 对梯度的整体缩放基本不敏感，代码保持原样。想与原注释的口径完全一致，可在 localtrio 配置里设 `trainer.loss_normalization: sum`。
+> **本地版说明：** `train_rl.py` 和 `train_sft.py` 都先手动把 advantage / weights 除以整批 assistant token 数，原版注释按“服务端对 loss 求和”的口径编写。localtrio 默认（`trainer.loss_normalization: active_tokens`，与 PyTRIO 0.2.9 文档一致）还会再除以该批 active token 数：SFT 为该批 assistant token 数，RL 为该批全部非 `-100` 位置（含问题、图片和工具观察）。这个因子随 batch 变化，RL 中还随轨迹长度和被跳过的组数变化，会改变各步更新的相对大小，并不是一个常数缩放。代码保持原样；想按原注释口径（逐 token 平均）训练，可在 localtrio 配置里设 `trainer.loss_normalization: sum`。
 
 下面的训练曲线是原文在 PyTRIO 上的记录。
 
@@ -367,11 +368,14 @@ RL 的 epoch 很长，建议先用 `--epochs 1` 和默认 `--save-every 100` 跑
 ```bash
 uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
 uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重；9B 实验再加 Qwen/Qwen3.5-9B
 cd experiments/spec-o3
 uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
 **下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、GPU1/2/3 采样）。脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
+
+`localtrio download` 这一步不能省：脚本先读取 tokenizer 与 image processor，HF 缓存里会留下一个没有权重的快照，localtrio 默认的 `auto` 模式会把它当成已缓存的模型，训练端和 vLLM 随后因找不到权重而启动失败；已经失败过时，再执行一次同一条命令即可补全。改从 ModelScope 下载时，除了 `--source modelscope`，后续训练和评测命令前还要加 `LOCALTRIO_MODEL_SOURCE=modelscope`，详见 [快速开始](./start.md)。
 
 ### 8.2 先准备 SFT，再准备 RL 数据
 
@@ -474,6 +478,8 @@ uv run python train_rl.py \
 | 序列预算 | SFT cutoff 32,768；RL max response 32,768 | 训练轨迹按 16,384 总上下文安排 |
 
 作者参数来自固定提交的 [SFT YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/cold_start/examples/spec_o3/qwen2_5_sft_full.yaml) 与 [RL YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/reinforcement_learning/recipe/spec_o3/configs/spec_o3.yaml)。本章也未逐项复刻上游 loss 的全部细节，因此这些结果用于观察本地方法迁移，不能直接与论文榜单数值对齐。本地版沿用首轮 4B 实验的全部超参；训练后端从 PyTRIO 换成 localtrio，数值实现不会逐位一致。
+
+> **与原文的一处实现差异：** `train_sft.py` 调用 `create_lora_training_client_async` 时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA；RL 从 SFT state 继续，也沿用这组模块。本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个多模态模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md)。
 
 ### 8.5 评测 4B Base、SFT，以及 4B / 9B RL
 

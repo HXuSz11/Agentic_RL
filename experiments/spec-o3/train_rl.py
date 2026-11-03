@@ -254,8 +254,9 @@ async def main(args):
                     tokens = sum(count for _, count in samples)
 
                     # 3. 按整个 batch 的 assistant token 数缩放 advantage（原版按服务端求和编写；
-                    #    localtrio 默认还会除以整批 active token 数，梯度整体多一个常数缩放，
-                    #    Adam 对此基本不敏感；设 trainer.loss_normalization: sum 可与原注释一致）。
+                    #    localtrio 默认还会再除以该批全部非 -100 位置数（含问题、图片和工具观察），
+                    #    这个因子随轨迹长度和被跳过的组数变化，会改变各步更新的相对大小；
+                    #    设 trainer.loss_normalization: sum 可按原注释口径（逐 token 平均）训练）。
                     for datum in data:
                         advantages = datum.loss_fn_inputs["advantages"].to_numpy()
                         datum.loss_fn_inputs["advantages"] = trio.types.TensorData.from_numpy(

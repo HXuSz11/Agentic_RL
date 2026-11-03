@@ -216,7 +216,7 @@ Agentic RL 又比普通数学 RL 更麻烦。一次 rollout 里面不只有模�
 
 - 主进程（普通 Python）：数据、搜索环境、rollout 状态机、reward、advantage、实验循环；
 - trainer 子进程（GPU0）：前向、反向、LoRA AdamW、`save_state` 和 `save_weights_for_sampler`；
-- 3 个 vLLM 采样子进程（GPU1/2/3）：按在途请求数做负载均衡，新的 LoRA 权重按目录热加载，不需要重启引擎。
+- 3 个 vLLM 采样子进程（GPU1/2/3）：优先按 prompt 前 512 个 token 的哈希把请求路由到固定副本（让多轮轨迹复用 prefix cache）；该副本在途请求比最空闲的副本多 8 个以上时，退回最少负载路由。新的 LoRA 权重按目录热加载，不需要重启引擎。
 
 主进程里的代码和原文完全一样，只需要像普通 Python 一样调用：
 
@@ -247,7 +247,7 @@ training_client.optim_step(adam_params).result()
 | GPU0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加上 LoRA 与 AdamW 状态、梯度检查点激活和分块 logits，单条轨迹 ≤ 8,192 token 时约 15–25 GB |
 | GPU1–3 采样显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占约 40 GB（权重 + KV cache） |
 | 单个 step | 64 条轨迹：rollout 受搜索延迟和最多 6 轮串行生成影响，约 2–4 分钟；训练约 1–3 分钟 |
-| 20 / 100 step | 约 1.5–3 小时 / 约 7–13 小时（Wikipedia 后端并发只有 3，会更慢） |
+| 20 / 100 step | 约 1–2.5 小时 / 约 5–12 小时（Wikipedia 后端并发只有 3，会更慢） |
 | 评测 70 题 | 约 10–20 分钟，主要受搜索延迟影响 |
 
 DeepSeek Search API 仍按次计费（见上面的后端对比表）；本地版省掉的只是训练与采样的云端费用。
@@ -623,7 +623,7 @@ advantage 为零的轨迹也保留在完整 batch 中，使 trainer 使用完整
 ```bash
 uv sync --extra kernels    # 含 torch / transformers / peft / vllm，kernels 为 Qwen3.5 线性注意力训练加速
 uv run python -m localtrio info   # 确认 4 张 A6000 与 GPU 布局
-swanlab login              # 可选；用 --swanlab-mode disabled 可跳过
+uv run swanlab login       # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
 不需要 `trio login`，训练侧也没有 API Key 或计费（搜索 API 的 Key 见第 3 步）：训练与采样都跑在本机，默认 GPU0 训练、GPU1/2/3 采样，不需要任何配置文件。模型默认从 HuggingFace 下载，国内网络可设置 `HF_ENDPOINT` 或 `LOCALTRIO_MODEL_SOURCE=modelscope`。
@@ -757,15 +757,31 @@ uv run python eval.py \
 
 ### 6. 绘制评测结果
 
-绘制本次 DeepSeek 官方 Search API 的 Base 与 Step 30 对比：
+最简单的做法是直接看 `eval.py` 在终端打印、并写在 JSONL 最后一行 `type=summary` 里的汇总指标（`em/macro`、`format/rate` 等）。
+
+`deepseek-api` preset 是为原文在 PyTRIO 上的 Base 与 Step 30 结果图写的。下面这条是重绘原文结果图的命令，需要原文的评测 JSONL：
 
 ```bash
 uv run python analyse.py --preset deepseek-api
 ```
 
-该 preset 读取 `eval_result/eval_results_base.jsonl` 和 `eval_result/eval_results_rl_step_30.jsonl`，默认输出 `images/deepseek_api_base_vs_step30.png`。这个文件就是本文引用的原文结果图，绘制本地结果时建议加 `--output eval_result/local_base_vs_step30.png`，避免覆盖。
+该 preset 只读取固定文件名 `eval_result/eval_results_base.jsonl` 和 `eval_result/eval_results_rl_step_30.jsonl`，默认输出 `images/deepseek_api_base_vs_step30.png`，也就是本文引用的原文结果图。原文的这两个 JSONL 不在仓库里（`eval_result/` 已被 `.gitignore` 忽略），所以读者无法直接重绘原图。
 
-绘制旧 DeepSeek Evidence 历史实验的 Base 与 Step 20 对比：
+想用它画第 5 步得到的本地 DeepSeek 结果，先把文件复制成它要的名字，并且一定要加 `--output`，避免覆盖原文结果图：
+
+```bash
+cp eval_result/eval_results_base_deepseek_api.jsonl eval_result/eval_results_base.jsonl
+cp eval_result/eval_results_rl_step_20_deepseek_api.jsonl eval_result/eval_results_rl_step_30.jsonl
+uv run python analyse.py --preset deepseek-api --output eval_result/local_base_vs_step20.png
+```
+
+这个做法有几处限制：
+
+- 只适用于 DeepSeek 后端的完整 70 题评测：脚本要求两份结果都是 `search_backend=deepseek`、`evaluated_examples` 为 70 且搜索配置完全一致，所以 Wikipedia 后端或加了 `--limit` 的结果会直接报错；
+- 图里的柱子标签和底部脚注仍写作 “Step 30” / “30 training steps”，“search success 100% in both evaluations” 也是写死的，不代表本地实际的搜索成功率；
+- y 轴固定为 Macro EM 0.38–0.46、Format 0.80–0.96，超出范围的数值会被截断。
+
+绘制旧 DeepSeek Evidence 历史实验的 Base 与 Step 20 对比（同样需要原文的 JSONL，仓库里没有）：
 
 ```bash
 uv run python analyse.py --preset deepseek

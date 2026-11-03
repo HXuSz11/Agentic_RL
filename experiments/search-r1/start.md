@@ -125,12 +125,24 @@ uv run python experiments/search-r1/eval.py \
 
 ## 7. 绘图
 
+最简单的做法是直接看 `eval.py` 在终端打印、并写在 JSONL 最后一行 `type=summary` 里的汇总指标（`em/macro`、`format/rate` 等）。
+
+`analyse.py --preset deepseek-api` 是为原文在 PyTRIO 上的 Base vs Step 30 结果图写的：它只读取固定文件名 `eval_result/eval_results_base.jsonl` 和 `eval_result/eval_results_rl_step_30.jsonl`，而原文的这两个 JSONL 不在仓库里（`eval_result/` 已被 `.gitignore` 忽略）。想用它画本地第 6 步的 DeepSeek 结果，先把文件复制成它要的名字，并且一定要加 `--output`（不加时会写到 `images/deepseek_api_base_vs_step30.png`，覆盖 readme 引用的原文结果图）：
+
 ```bash
+cp experiments/search-r1/eval_result/eval_results_base_deepseek_api.jsonl \
+   experiments/search-r1/eval_result/eval_results_base.jsonl
+cp experiments/search-r1/eval_result/eval_results_rl_step_20_deepseek_api.jsonl \
+   experiments/search-r1/eval_result/eval_results_rl_step_30.jsonl
 uv run python experiments/search-r1/analyse.py --preset deepseek-api \
-    --output experiments/search-r1/eval_result/local_base_vs_step30.png
+    --output experiments/search-r1/eval_result/local_base_vs_step20.png
 ```
 
-`deepseek-api` preset 读取 `eval_result/eval_results_base.jsonl` 和 `eval_result/eval_results_rl_step_30.jsonl`。不加 `--output` 时会写到 `images/deepseek_api_base_vs_step30.png`，覆盖 readme 引用的原文结果图。
+注意：
+
+- 只适用于 DeepSeek 后端的完整 70 题评测：脚本要求两份结果都是 `search_backend=deepseek`、`evaluated_examples` 为 70 且搜索配置完全一致，所以 Wikipedia 后端或加了 `--limit` 的结果会直接报错。
+- 图里的柱子标签和底部脚注仍写作 “Step 30” / “30 training steps”，“search success 100% in both evaluations” 也是写死的，不代表本地实际的搜索成功率。
+- y 轴固定为 Macro EM 0.38–0.46、Format 0.80–0.96，超出范围的数值会被截断。
 
 ## 8. 资源估算
 
@@ -141,7 +153,7 @@ uv run python experiments/search-r1/analyse.py --preset deepseek-api \
 | GPU0 训练显存 | 约 15–25 GB（4B bf16 权重约 9 GB + LoRA/AdamW + 激活，单条 ≤ 8,192 token） |
 | GPU1–3 采样显存 | 每卡约 40 GB（vLLM 按 `gpu_memory_utilization=0.85` 预占） |
 | 单个 step | rollout 约 2–4 分钟 + 训练约 1–3 分钟 |
-| 20 step / 100 step | 约 1.5–3 小时 / 约 7–13 小时 |
+| 20 step / 100 step | 约 1–2.5 小时 / 约 5–12 小时（未实测） |
 | 70 题评测 | 约 10–20 分钟 |
 | 磁盘 | 每次保存的 LoRA 几十到几百 MB；每步的临时采样权重只保留最近 4 份 |
 
@@ -160,7 +172,7 @@ LOCALTRIO_CONFIG=my-search-r1.yaml uv run python experiments/search-r1/train.py 
 
 **vLLM 加载 LoRA 时报 target modules 不支持**：把 `trainer.lora_target_modules` 改成 `standard`（只训练 q/k/v/o + MLP），重新训练。
 
-**`--model-path` 报“不是 LoRA 权重目录”**：要传 `sampler_weights/` 下的目录，而不是 `states/`；也不能再用原文的 `trio://` 路径。
+**`--model-path` 报“不是 LoRA 权重目录（缺少 adapter_config.json）”**：路径要指向训练终端 `Saved sampler weights:` 打印的具体目录（`~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>`），不能是 run 目录或 `sampler_weights/` 父目录，也不要把 `<run_id>` 占位符原样粘进去。原文的 `trio://` 路径会报另一条“PyTRIO 云端路径”错误。`states/` 下的目录虽然也能加载，但评测请用 `sampler_weights/`（默认按 bf16 导出，不含优化器状态）。
 
 **搜索大量 429 或超时**：调小 `--search-concurrency`，或调大 `--search-timeout`；先在 SwanLab 里确认 `search/success_rate` 正常再看 reward。
 

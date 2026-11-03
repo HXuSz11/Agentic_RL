@@ -58,11 +58,27 @@ def resolve_model_path(name: str, model_paths: dict[str, str] | None = None, sou
         raise RuntimeError(f"无法获取模型 {name}：\n" + "\n".join(errors))
 
 
+def has_weights(model_dir: str | None) -> bool:
+    """缓存目录里是否真的有模型权重。
+
+    只用 AutoTokenizer / AutoImageProcessor 访问过某个模型时，HF 缓存里只有 tokenizer
+    与配置文件；这种“残缺快照”不能交给训练 / 采样引擎，需要继续下载完整权重。
+    """
+    if not model_dir:
+        return False
+    root = Path(model_dir)
+    if not root.is_dir() or not (root / "config.json").exists():
+        return False
+    patterns = ("*.safetensors", "*.safetensors.index.json", "*.bin", "*.bin.index.json", "*.pt")
+    return any(next(root.glob(pattern), None) is not None for pattern in patterns)
+
+
 def _cached_hf(name: str) -> str | None:
     try:
         from huggingface_hub import snapshot_download
 
-        return snapshot_download(name, local_files_only=True)
+        path = snapshot_download(name, local_files_only=True)
+        return path if has_weights(path) else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -71,7 +87,8 @@ def _cached_modelscope(name: str) -> str | None:
     try:
         from modelscope.hub.snapshot_download import snapshot_download
 
-        return snapshot_download(name, local_files_only=True)
+        path = snapshot_download(name, local_files_only=True)
+        return path if has_weights(path) else None
     except Exception:  # noqa: BLE001
         return None
 
