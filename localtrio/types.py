@@ -248,6 +248,31 @@ class Datum(BaseModel):
             return data
         return {**data, "loss_fn_inputs": {k: TensorData.model_validate(v) for k, v in inputs.items()}}
 
+    def validate_loss_inputs(self, loss_fn: str) -> None:
+        """检查该样本是否满足某个内置 loss 的输入约定（与训练端的校验一致）。
+
+        - 必需字段齐全（cross_entropy: target_tokens；策略 loss 另需 logprobs / advantages）；
+        - ``target_tokens`` 为 int64；
+        - 所有一维输入与 ``model_input`` 等长（含图片时按 ``expected_tokens`` 计算）。
+        """
+        from .losses import LOSS_INPUT_SCHEMAS, normalize_loss_fn
+
+        name = normalize_loss_fn(loss_fn)
+        for field_name in LOSS_INPUT_SCHEMAS[name]:
+            if field_name not in self.loss_fn_inputs:
+                raise ValueError(f"{field_name} is required for loss_fn={name}")
+        if self.loss_fn_inputs["target_tokens"].dtype != "int64":
+            raise ValueError("target_tokens must have dtype int64")
+        try:
+            length = len(self.model_input)
+        except ValueError:
+            length = None  # 图片缺少 expected_tokens 时由训练端推断
+        for field_name, tensor in self.loss_fn_inputs.items():
+            if length is not None and tensor.shape != [length]:
+                raise ValueError(f"{field_name} must have shape [{length}], got {tensor.shape}")
+            if tensor.dtype == "float32" and any(not math.isfinite(x) for x in tensor.data):
+                raise ValueError(f"{field_name} contains non-finite values")
+
 
 # ---------------------------------------------------------------------------
 # 采样

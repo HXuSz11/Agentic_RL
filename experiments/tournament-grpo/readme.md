@@ -7,25 +7,31 @@
 </div>
 
 <div align="center">
-  <a href="https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/tournament-grpo"><img alt="Code" src="https://img.shields.io/badge/Code-tournament--grpo-2563eb?style=flat"></a>
+  <a href="./train.py"><img alt="Code" src="https://img.shields.io/badge/Code-tournament--grpo-2563eb?style=flat"></a>
   <a href="https://arxiv.org/abs/2605.26958v2"><img alt="Paper" src="https://img.shields.io/badge/Paper-Tournament--GRPO-d94a45?style=flat"></a>
   <a href="https://github.com/PuffYang/Tournament_GRPO/tree/eea826cf66705cac9ec81823f746d0ccd6074228"><img alt="Author Code" src="https://img.shields.io/badge/Author%20Code-eea826cf-f59e0b?style=flat"></a>
-  <a href="https://docs.pytrio.com/docs"><img alt="PyTRIO" src="https://img.shields.io/badge/PyTRIO-0.2.9-7c3aed?style=flat"></a>
   <a href="https://swanlab.cn/@MRLE/tournament-grpo"><img alt="SwanLab" src="https://img.shields.io/badge/SwanLab-tournament--grpo-16a34a?style=flat"></a>
 </div>
 
+> **本地 GPU 版说明**
+>
+> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 的梯度严格等于自定义 loss 的梯度）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
+>
+> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢 MRLE 与 Datawhale 社区。
+
 > **代码与复现资源**
 >
-> - 本章实现：[训练](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/tournament-grpo/train.py) / [淘汰赛奖励](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/tournament-grpo/reward.py) / [多轮 rollout](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/tournament-grpo/rollout.py) / [裁判](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/tournament-grpo/judge.py)
+> - 本章实现：[训练](./train.py) / [淘汰赛奖励](./reward.py) / [多轮 rollout](./rollout.py) / [裁判](./judge.py)，运行步骤见[快速启动指南](./start.md)
+> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
 > - 论文：[Tournament-GRPO: Group-Wise Tournament Rewards for Reinforcement Learning in Open-Ended Long-Form Generation(EMNLP'26)](https://arxiv.org/abs/2605.26958v2)
 > - 作者代码：[PuffYang/Tournament_GRPO](https://github.com/PuffYang/Tournament_GRPO/tree/eea826cf66705cac9ec81823f746d0ccd6074228)
-> - SwanLab：[20-step 训练记录](https://swanlab.cn/@MRLE/tournament-grpo/v1/x1tb4s/runs/s474uc49/chart)
+> - SwanLab：[原文（PyTRIO）20-step 训练记录](https://swanlab.cn/@MRLE/tournament-grpo/v1/x1tb4s/runs/s474uc49/chart)
 > - 搜索与裁判：[DeepSeek Search API](https://api-docs.deepseek.com/zh-cn/guides/search/) / [Jina Reader](https://jina.ai/reader/) / [Jev](https://docs.typesafe.ai/api/system-one) `jev-1.14.0`
 > - 本章作者：[MRLE](https://mrlepro.com)
 
 
 
-前面的 [Search-R1](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/search-r1/readme.md) 和 [ReTool](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/retool/readme.md) 都有一个舒服的前提：答案能对上标准答案，reward 就是 1。这一篇换成 deep research 任务：模型自己搜索、读网页，最后写一份研究报告。比如训练集里的一道题是：
+前面的 [Search-R1](../search-r1/readme.md) 和 [ReTool](../retool/readme.md) 都有一个舒服的前提：答案能对上标准答案，reward 就是 1。这一篇换成 deep research 任务：模型自己搜索、读网页，最后写一份研究报告。比如训练集里的一道题是：
 
 > What progress has been made in the application of data mining in materials science research?
 
@@ -33,16 +39,18 @@
 
 Tournament-GRPO 关心的是：裁判应该怎样给分，GRPO 才能拿到有用的信号。它的答案很朴素：别让裁判给每份报告单独算分，让同一道题的报告两两比赛，按胜场算 reward。
 
-我把作者的 verl 实现搬到了 PyTRIO 上：Qwen3.5-4B LoRA，DeepSeek 搜索加 Jina 读网页，Jev 当裁判。下面先画一张地图，再讲算法、代码和实验。
+原文（MRLE）把论文作者的 verl 实现搬到了 PyTRIO 上：Qwen3.5-4B LoRA，DeepSeek 搜索加 Jina 读网页，Jev 当裁判。本地版保留这套组合，只把训练与采样换成 4×A6000 上的 localtrio。下面先画一张地图，再讲算法、代码和实验。
 
 ## 0. 先看结论
+
+> 下表为原文在 PyTRIO 上的结果；本地版的资源估算见 [6.3 节](#63-成本与本地资源估算)。
 
 | 项目 | 状态 |
 | --- | --- |
 | 淘汰赛奖励、格式奖励、advantage、PPO loss | 已对照作者函数逐项核验数值和梯度 |
 | 20-step 训练（8 题 × 8 条轨迹） | 1,280 条轨迹、4,480 场裁判比较，答案完成率 64% → 97% |
 | Base vs checkpoint 评测 | Deep Research Bench 全部 100 题，RACE Overall 20.65 → 34.70 |
-| 费用与耗时 | 训练 78.92 元（4 小时 3 分钟）+ 评测 13.12 元，共 92.04 元 |
+| 费用与耗时（原文，含 PyTRIO 与外部 API） | 训练 78.92 元（4 小时 3 分钟）+ 评测 13.12 元，共 92.04 元 |
 
 20 步之后，模型最明显的变化是学会了按时交卷。100 题评测里，答案完成率从 60% 升到 98%，格式合规率从 42% 升到 72%。RACE Overall 的 14 分涨幅主要来自白卷变少：空报告记 0 分，Base 有 40 题没交卷。只看两边都写出报告的 59 题，Overall 是 34.49 → 35.25。
 
@@ -220,7 +228,7 @@ for repeat in range(TOURNAMENT_REPEATS):           # M = 4
 
 ### 5.5 Advantage 与 PPO loss
 
-advantage 是第 4 节的组内标准化。loss 按作者的 vanilla PPO 写成 PyTRIO 自定义 loss（`train.py` 的 `ppo_objective`）：
+advantage 是第 4 节的组内标准化。loss 按作者的 vanilla PPO 写成自定义 loss（`train.py` 的 `ppo_objective`），通过 `forward_backward_custom` 提交；localtrio 先前向拿到可求导的 logprob，在主进程里算 loss，再把梯度反传到 LoRA，得到的梯度严格等于这个 loss 的梯度：
 
 ```python
 log_ratio = (current - old).clamp(-20.0, 20.0)
@@ -246,11 +254,14 @@ loss = losses.mean()                                   # 整个 batch 的 assist
 | 交互预算 | 8 轮 / 7 次工具，用完直接停 | 6 轮 / 4 次工具，最后一次工具结果附收尾提示 | 研究深度变浅；新增环境提示 |
 | 裁判失败 | 随机选胜者 | 停止训练，从 checkpoint 续训 | 不会用随机 reward 更新 |
 | 训练规模 | batch 16，多 epoch，约 1,100–1,600 step | batch 8 题 × 8 条，20 step | 只能观察早期行为变化 |
+| 训练后端 | verl | 原文 PyTRIO 云端；本地版 localtrio（4×A6000） | 数值实现不逐位一致 |
 | 实验追踪 | WandB | SwanLab | 无 |
 
 淘汰赛结构（G=2、W=1、F=1、M=4）、归一化、无答案置 0、格式规则、18000 token 的 response 预算、3000 字符的工具截断和作者 prompt 都保持原样。
 
 ## 6. 实验结果
+
+> 6.1、6.2 的数值与曲线均为原文在 PyTRIO 上的结果。
 
 ### 6.1 20-step 训练
 
@@ -299,22 +310,35 @@ loss = losses.mean()                                   # 整个 batch 的 assist
 
 SwanLab：[Base 生成](https://swanlab.cn/@MRLE/tournament-grpo/runs/5cqbugvp)、[Step 20 生成](https://swanlab.cn/@MRLE/tournament-grpo/runs/0fw66y62)、[Base RACE](https://swanlab.cn/@MRLE/tournament-grpo/runs/5lz7d3t0)、[Step 20 RACE](https://swanlab.cn/@MRLE/tournament-grpo/runs/7gyzdjge)。
 
-### 6.3 成本
+### 6.3 成本与本地资源估算
 
-| 阶段 | 项目 | 花费（元） |
-| --- | --- | ---: |
-| 训练 | PyTRIO（训练与采样） | 60.96 |
-| 训练 | DeepSeek Search | 16.96 |
-| 训练 | Jev 裁判 | 1.00 |
-| 评测 | PyTRIO（采样） | 3.20 |
-| 评测 | DeepSeek | 9.92 |
-| | **合计** | **92.04** |
+原文的花费如下。本地版不再有 PyTRIO 的训练与采样费用，但外部 API（DeepSeek Search、Jev、RACE 用的 DeepSeek）照常计费，量级可参考原文：
 
-PyTRIO 账单：
+| 阶段 | 项目 | 原文花费（元） | 本地版 |
+| --- | --- | ---: | --- |
+| 训练 | PyTRIO（训练与采样） | 60.96 | 无，改为占用本机 GPU |
+| 训练 | DeepSeek Search | 16.96 | 照常计费 |
+| 训练 | Jev 裁判 | 1.00 | 照常计费 |
+| 评测 | PyTRIO（采样） | 3.20 | 无，改为占用本机 GPU |
+| 评测 | DeepSeek | 9.92 | 照常计费 |
+| | **合计** | **92.04** | 外部 API 约 28 元 |
 
-![PyTRIO 账单](./images/pytrioBill.png)
+原文训练总时长 4 小时 3 分钟，平均每步 12.2 分钟。时间大头在裁判：4,480 场比较累计约 2 小时 22 分钟，占 58%。20 步里裁判共读入约 758 万 token、输出约 13.9 万 token，模型共搜索 3,218 次、浏览网页 722 次。评测时生成 100 份报告，Base 用了 4.5 分钟，Step 20 用了 13.2 分钟。
 
-训练总时长 4 小时 3 分钟，平均每步 12.2 分钟，每步约 3.95 元。时间大头在裁判：4,480 场比较累计约 2 小时 22 分钟，占 58%，费用却只有 1 元。20 步里裁判共读入约 758 万 token、输出约 13.9 万 token，模型共搜索 3,218 次、浏览网页 722 次。评测时生成 100 份报告，Base 用了 4.5 分钟，Step 20 用了 13.2 分钟。
+本地版的资源估算如下：
+
+> 以下数字按模型规模和上面的原文记录推算，是**粗略估算，未经实测**。裁判、搜索和 Jina 限速都是外部因素，本地 GPU 再快也省不掉这部分时间。
+
+| 项目 | 估算（未实测） |
+| --- | --- |
+| GPU 布局 | 内置默认布局（即 `configs/4xa6000.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
+| GPU0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 20–35 GB |
+| GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB |
+| 单个 step | rollout 约 3–6 分钟 + 裁判 224 场约 7 分钟（外部 API，与原文相近）+ 训练约 4–7 分钟（自定义 loss 要做两次前向） |
+| 20 step | 约 5–7 小时 |
+| Deep Research Bench 生成 100 题 | 约 5–20 分钟（每题贪心 1 条轨迹） |
+
+训练时 4 张卡都被占用；想用本机模型当裁判，需要先把采样缩到两张卡，详见[快速启动指南](./start.md)的“可选：本地裁判”一节。
 
 ## 7. 训练时最应该看哪些指标？
 
@@ -334,7 +358,8 @@ PyTRIO 账单：
 
 ## 8. 这次复现有哪些边界？
 
-- policy、裁判、搜索后端和训练规模都和论文不同，分数不能和论文直接对比。本章验证的是淘汰赛奖励接到 PyTRIO 上后，训练链路是否正确、早期行为往哪变。
+- policy、裁判、搜索后端和训练规模都和论文不同，分数不能和论文直接对比。原文验证的是淘汰赛奖励接到 PyTRIO 上后，训练链路是否正确、早期行为往哪变。
+- 本地版把训练后端换成 localtrio，数值实现与 PyTRIO 不会逐位一致；搜索结果随时间变化，裁判也有随机性，本地复现的曲线和 RACE 分数可能与原文有差异。如果改用本机模型当裁判，reward 的偏好会随之改变，结果更不能与原文直接比较。
 
 ## 9. Insight and Action
 
@@ -359,7 +384,7 @@ Tournament-GRPO 的改动很小，只换了 reward 的来源：
 
 复现过程中，花时间最多的是环境：砍掉工具预算后模型不会收尾，裁判网络失败会产生随机 reward，搜索接口对 query 长度有限制。这些和算法本身无关，却决定了一步训练有没有有效梯度。Agentic RL 里，环境质量本身就是实验变量。
 
-这次 20 步训练花了 78.92 元、4 小时 3 分钟，评测再花 13.12 元，合计 92.04 元。在 Deep Research Bench 全部 100 题上，答案完成率 60% → 98%，格式合规率 42% → 72%，RACE Overall 20.65 → 34.70。
+原文的 20 步训练花了 78.92 元、4 小时 3 分钟，评测再花 13.12 元，合计 92.04 元。在 Deep Research Bench 全部 100 题上，答案完成率 60% → 98%，格式合规率 42% → 72%，RACE Overall 20.65 → 34.70。本地版省掉了其中 PyTRIO 的部分，外部 API 的费用和裁判耗时仍在。
 
 ## 参考资料
 
@@ -368,7 +393,9 @@ Tournament-GRPO 的改动很小，只换了 reward 的来源：
 3. [Qwen/Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B)
 4. [DeepSeek Search API](https://api-docs.deepseek.com/zh-cn/guides/search/)
 5. [Jina Reader](https://jina.ai/reader/)
-6. [PyTrio-Jev 章节](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/pytrio-jev/readme.md)
-7. [Tournament-GRPO PyTRIO 完整代码](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/tournament-grpo)
-8. [PyTRIO 文档](https://docs.pytrio.com/docs) / [自定义 loss](https://docs.pytrio.com/docs/guide/custom_loss)
-9. [SwanLab 文档](https://docs.swanlab.cn/)
+6. [PyTrio-Jev 章节](../pytrio-jev/readme.md)
+7. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
+8. [localtrio 原理与 API 对照（含 custom loss 语义）](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+9. 原版（PyTRIO）教程与代码：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/tournament-grpo`，原内容贡献者 [MRLE](https://mrlepro.com)）
+10. [PyTRIO 文档](https://docs.pytrio.com/docs) / [自定义 loss](https://docs.pytrio.com/docs/guide/custom_loss)（原版使用）
+11. [SwanLab 文档](https://docs.swanlab.cn/)

@@ -18,3 +18,6 @@ models:
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_num_seqs: 256
+    # 预填充分块大小；compute_logprobs 的显存尖峰与它成正比（2048 ≈ 4~5GB）
+    max_num_batched_tokens: 2048
+    # max_model_len: 32768        # 默认用模型自带上限；显存紧张或 vLLM 启动报 KV 不足时设置

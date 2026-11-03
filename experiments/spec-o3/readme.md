@@ -19,7 +19,7 @@
 >
 > 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行。4B 用默认布局（GPU0 训练、GPU1/2/3 采样）；9B 用 `configs/4xa6000-big-student.yaml`（GPU0,1 训练、GPU2,3 采样），详见[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
 >
-> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（知乎 / 小红书主页见上方徽章）与 Datawhale 社区。
+> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >

@@ -107,7 +107,10 @@ class EngineConfig:
     gpu_memory_utilization: float = 0.85
     max_model_len: int | None = None
     max_num_seqs: int = 256
-    max_num_batched_tokens: int | None = None
+    # 单次调度的 token 上限（预填充按此分块）。compute_logprobs / prompt logprobs 会为每个
+    # prompt token 计算整词表 fp32 logprob（Qwen3.5 词表约 25 万），显存尖峰约与它成正比：
+    # 2048 → 约 4~5GB。只做生成、不算 prompt logprob 时可调大以加快长 prompt 的预填充。
+    max_num_batched_tokens: int | None = 2048
     enable_prefix_caching: bool = True
     enforce_eager: bool = False
     dtype: str = "bfloat16"

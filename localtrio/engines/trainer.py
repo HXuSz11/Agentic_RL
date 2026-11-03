@@ -82,8 +82,9 @@ class Run:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-def _chunk_logprobs(hidden: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None, targets: torch.Tensor) -> torch.Tensor:
-    logits = nn.functional.linear(hidden, weight, bias).float()
+def _chunk_logprobs(head: nn.Module, hidden: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    # 直接调用输出层模块：lm_head 挂了 LoRA（train_unembed）时也能正确计算
+    logits = head(hidden).float()
     picked = logits.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
     return picked - torch.logsumexp(logits, dim=-1)
 
@@ -196,16 +197,20 @@ class TrainerEngine:
         if not 1 <= rank <= 128:
             raise ValueError("LoRA rank 需要在 [1, 128] 范围内（PyTRIO 为 [4, 64]）")
         if train_unembed and not self.cfg.get("allow_unembed", False):
-            logger.info("train_unembed=True 被忽略：vLLM 的 LoRA 默认不支持 lm_head（可设置 trainer.allow_unembed）")
+            # PyTRIO 默认 train_unembed=True。vLLM 只对部分模型类声明了 lm_head LoRA
+            # （Qwen3.5 多模态类没有），所以默认不训练输出层，避免采样端加载 adapter 失败。
+            logger.info("train_unembed=True 被忽略（设置 trainer.allow_unembed: true 可开启，需要 vLLM 支持该模型的 lm_head LoRA）")
             train_unembed = False
         targets = self._target_modules(train_mlp, train_attn)
+        if train_unembed:
+            # 以 LoRA 的形式训练输出层（vLLM 不支持 modules_to_save 形式的 lm_head）
+            targets = [*targets, "lm_head"]
         lora_cfg = LoraConfig(
             r=rank,
             lora_alpha=float(self.cfg.get("lora_alpha", 32.0)),
             lora_dropout=float(self.cfg.get("lora_dropout", 0.0)),
             target_modules=targets,
             exclude_modules=VISION_EXCLUDE if self._has_vision else None,
-            modules_to_save=["lm_head"] if train_unembed else None,
             bias="none",
             task_type="CAUSAL_LM",
         )
@@ -344,22 +349,24 @@ class TrainerEngine:
         with ctx, self._hidden_head() as head:
             out = self.model(**kwargs)
             hidden = out.logits if hasattr(out, "logits") else out[0]
-            weight = head.weight
-            bias = getattr(head, "bias", None)
-            hidden = hidden.to(weight.device)
-            targets = targets.to(weight.device)
+            head_device = next(head.parameters()).device
+            # 只保留真实 token（去掉右侧 padding）并展平成 [N, H]，再按总 token 数分块：
+            # 每块 logits 为 [chunk, vocab]，与 batch 里有多少条序列无关。
+            valid = attention.bool().to(hidden.device)
+            flat_hidden = hidden[valid].to(head_device)
+            flat_targets = targets.to(hidden.device)[valid].to(head_device)
             chunk = int(self.cfg.get("logits_chunk_size", 1024))
             pieces = []
-            for start in range(0, max_len, chunk):
-                h = hidden[:, start : start + chunk]
-                t = targets[:, start : start + chunk]
+            for start in range(0, flat_hidden.shape[0], chunk):
+                h = flat_hidden[start : start + chunk]
+                t = flat_targets[start : start + chunk]
                 if grad:
-                    lp = torch.utils.checkpoint.checkpoint(_chunk_logprobs, h, weight, bias, t, use_reentrant=False)
+                    lp = torch.utils.checkpoint.checkpoint(_chunk_logprobs, head, h, t, use_reentrant=False)
                 else:
-                    lp = _chunk_logprobs(h, weight, bias, t)
+                    lp = _chunk_logprobs(head, h, t)
                 pieces.append(lp)
-            logprobs = torch.cat(pieces, dim=1)
-        return [logprobs[b, : item.length] for b, item in enumerate(items)]
+            flat_logprobs = torch.cat(pieces)
+        return list(flat_logprobs.split([item.length for item in items]))
 
     # ------------------------------------------------------------------ API
     def forward(

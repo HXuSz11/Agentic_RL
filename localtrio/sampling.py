@@ -122,6 +122,11 @@ class SamplingClient:
     async def compute_logprobs_async(self, prompt: ModelInput) -> list[float | None]:
         return await self.compute_logprobs(prompt)
 
+    @property
+    def task_id(self) -> str:
+        """兼容旧接口：采样快照的唯一标识（基模 + 权重目录）。"""
+        return self.sampling_run_cuid
+
     def get_tokenizer(self) -> Any:
         return self._runtime.tokenizer(self.base_model)
 

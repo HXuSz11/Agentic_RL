@@ -286,3 +286,52 @@ def test_vision_microbatch_invariance(vl_model):
     for a, b in zip(results[0][0], results[1][0], strict=True):
         np.testing.assert_allclose(a, b, atol=2e-5)
     torch.testing.assert_close(results[0][1], results[1][1], rtol=1e-3, atol=1e-6)
+
+
+def test_train_unembed_lora_on_lm_head(text_model, tmp_path):
+    """allow_unembed=True 时 lm_head 以 LoRA 训练；分块 logprob 要经过 LoRA 后的输出层。"""
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM
+
+    eng = make_engine(text_model, allow_unembed=True)
+    info = eng.create_run("u", rank=4, seed=1, train_mlp=True, train_attn=True, train_unembed=True)
+    assert "lm_head" in info["target_modules"]
+    with torch.no_grad():
+        for p in eng.runs["u"].params:
+            p.add_(torch.randn_like(p) * 0.05)
+    assert any("lm_head" in n for n, p in eng.model.named_parameters() if p.requires_grad)
+    rng = np.random.default_rng(6)
+    datum = text_datum(rng, 15, len(eng.tokenizer))
+    ours = eng.forward("u", [datum], "cross_entropy", None, False, False)["loss_fn_outputs"][0]["logprobs"]
+    eng.save("u", str(tmp_path / "w"), kind="sampler")
+    base = AutoModelForCausalLM.from_pretrained(text_model, dtype=torch.float32)
+    peft = PeftModel.from_pretrained(base, str(tmp_path / "w"))
+    ids = torch.tensor([datum["chunks"][0][1]])
+    with torch.no_grad():
+        logits = peft(input_ids=ids).logits[0].float()
+    ref = torch.log_softmax(logits, -1).gather(-1, torch.from_numpy(datum["inputs"]["target_tokens"]).unsqueeze(-1)).squeeze(-1)
+    np.testing.assert_allclose(ours, ref.numpy(), atol=1e-5)
+    # 默认配置下 train_unembed 被忽略
+    eng2 = make_engine(text_model)
+    assert "lm_head" not in eng2.create_run("d", rank=4, seed=1, train_mlp=True, train_attn=True, train_unembed=True)["target_modules"]
+
+
+def test_datum_validate_loss_inputs():
+    import localtrio as trio
+
+    ok = trio.Datum(
+        model_input=trio.ModelInput.from_ints([1, 2, 3]),
+        loss_fn_inputs={
+            "target_tokens": np.asarray([2, 3, 4], dtype=np.int64),
+            "logprobs": np.zeros(3, dtype=np.float32),
+            "advantages": np.ones(3, dtype=np.float32),
+        },
+    )
+    ok.validate_loss_inputs("ppo")
+    ok.validate_loss_inputs("cross_entropy")
+    missing = trio.Datum(model_input=ok.model_input, loss_fn_inputs={"target_tokens": ok.loss_fn_inputs["target_tokens"]})
+    with pytest.raises(ValueError, match="logprobs"):
+        missing.validate_loss_inputs("importance_sampling")
+    bad = trio.Datum(model_input=trio.ModelInput.from_ints([1, 2]), loss_fn_inputs=dict(ok.loss_fn_inputs))
+    with pytest.raises(ValueError, match="shape"):
+        bad.validate_loss_inputs("ppo")

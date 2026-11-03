@@ -3,7 +3,8 @@
     python -m localtrio info                      # 查看 GPU 布局与配置
     python -m localtrio download Qwen/Qwen3.5-4B  # 预下载模型（HF 或 ModelScope）
     python -m localtrio serve --base-model Qwen/Qwen3.5-4B --lora step100=/path/to/sampler_weights/step100 --gpus 1
-                                                  # 启动 OpenAI 兼容服务（评测脚本用）
+                                                  # 启动 OpenAI 兼容服务（评测脚本用）；
+                                                  # 未识别的参数原样转发给 vLLM，例如 --enforce-eager
     python -m localtrio merge --adapter /path/to/sampler_weights/final --out ./merged
                                                   # 把 LoRA 合并进基模，导出完整权重
 """
@@ -74,7 +75,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         str(args.gpu_memory_utilization),
         "--trust-remote-code",
     ]
-    if args.max_model_len:
+    if args.max_model_len and args.max_model_len > 0:
         cmd += ["--max-model-len", str(args.max_model_len)]
     loras = []
     for item in args.lora or []:
@@ -142,11 +143,10 @@ def main() -> None:
     p.add_argument("--gpus", default=None, help="例如 0 或 2,3")
     p.add_argument("--tp", type=int, default=1)
     p.add_argument("--port", type=int, default=8000)
-    p.add_argument("--max-model-len", type=int, default=None)
+    p.add_argument("--max-model-len", type=int, default=32768, help="默认 32768；传 0 使用模型自带上限")
     p.add_argument("--max-lora-rank", type=int, default=64)
     p.add_argument("--gpu-memory-utilization", type=float, default=0.9)
-    p.add_argument("extra", nargs=argparse.REMAINDER, help="其余参数原样传给 vLLM")
-    p.set_defaults(fn=cmd_serve)
+    p.set_defaults(fn=cmd_serve, extra=[])
 
     p = sub.add_parser("merge", help="把 LoRA 合并进基模")
     p.add_argument("--adapter", required=True)
@@ -155,7 +155,13 @@ def main() -> None:
     p.add_argument("--dtype", default="bfloat16")
     p.set_defaults(fn=cmd_merge)
 
-    args = parser.parse_args()
+    # serve 不认识的参数（如 --data-parallel-size 3、--enforce-eager）原样转发给 vLLM；
+    # 也兼容用 "--" 把它们隔开的写法。
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        if args.cmd != "serve":
+            parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+        args.extra = [item for item in unknown if item != "--"]
     args.fn(args)
 
 

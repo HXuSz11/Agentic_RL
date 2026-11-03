@@ -50,7 +50,7 @@ optim_step ──► save_weights_and_get_sampling_client()
 | PyTRIO 0.2.9 | localtrio | 本地实现 |
 | --- | --- | --- |
 | `trio.ServiceClient()` | 同名 | 读取配置，管理引擎子进程；`api_key` 等参数被忽略 |
-| `create_lora_training_client(base_model, rank, seed, train_mlp, train_attn, train_unembed)` | 同名（含 `_async`） | PEFT `LoraConfig`，`lora_alpha=32`；`train_unembed` 默认忽略（vLLM LoRA 不支持 lm_head） |
+| `create_lora_training_client(base_model, rank, seed, train_mlp, train_attn, train_unembed)` | 同名（含 `_async`） | PEFT `LoraConfig`，`lora_alpha=32`；`train_unembed` 默认忽略（见下方“已知差异”） |
 | `create_training_client_from_state(path)` / `_with_optimizer` | 同名（含 `_async`） | 从 `save_state` 目录恢复 adapter（和 AdamW 状态） |
 | `create_sampling_client(base_model, model_path=None)` | 同名（含 `_async`） | `model_path` 是本地 sampler_weights 目录 |
 | `training_client.forward(data, loss_fn)` | 同名 | 无梯度前向，返回逐 token `logprobs` |
@@ -121,6 +121,7 @@ models:
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_model_len: null           # null = 模型自带上限
+    max_num_batched_tokens: 2048  # 预填充分块；compute_logprobs 的显存尖峰与它成正比
   Qwen/Qwen3.6-27B:               # 其他基模（例如 OPD 教师）必须单独分配 GPU
     gpus: [2, 3]
     tensor_parallel_size: 2
@@ -140,7 +141,7 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
                                                                  # 把 LoRA 合并进基模，导出完整权重
 ```
 
-`serve` 适合用 OpenAI SDK 写的评测脚本（例如 Medical OPD 的 MedQA / C-Eval 评测）：模型名填基模名或 `--lora` 里的名字，API key 任意。
+`serve` 适合用 OpenAI SDK 写的评测脚本（例如 Medical OPD 的 MedQA / C-Eval 评测）：模型名填基模名或 `--lora` 里的名字，API key 任意。`--max-model-len` 默认 32768（传 0 用模型自带上限）；不认识的参数会原样转发给 vLLM，例如 `--enforce-eager`、`--data-parallel-size 3`。服务开启了 `VLLM_ALLOW_RUNTIME_LORA_UPDATING`，评测脚本可以通过 `/v1/load_lora_adapter` 动态挂载新的 checkpoint。
 
 ## 从 PyTRIO 代码迁移
 
@@ -155,7 +156,11 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
 
 - 没有远程控制面：`create_rest_client()` 不可用，checkpoint 就是磁盘上的目录。
 - LoRA rank 允许 1–128（PyTRIO 为 4–64）；vLLM 侧 `max_lora_rank` 默认 64，用更大的 rank 时同步修改 `models.default.max_lora_rank`。
-- `train_unembed=True` 默认被忽略；保存时的 `ttl_seconds` 被忽略（本地 checkpoint 不会过期，需要自己清理 `runs/` 目录）。
+- **`train_unembed`**：PyTRIO 默认 `True`（输出层也参与训练）。vLLM 0.33 只为纯文本 Qwen3.5 类声明了 `lm_head` LoRA，本 Lab 加载的 Qwen3.5 多模态类没有声明，采样端可能无法加载带 `lm_head` 的 adapter，所以本地默认忽略它。设置 `trainer.allow_unembed: true` 后会以 LoRA 形式训练 `lm_head`（训练端的 logprob 计算已支持），请先确认你的 vLLM 能加载这样的 adapter。这是本地结果与原文可能不同的原因之一。
+- **LoRA 缩放**：`lora_alpha` 固定为 32（`trainer.lora_alpha` 可改），缩放系数 `alpha / rank` 随 rank 变化：rank 32 为 1，rank 64（OPSD）为 0.5。PyTRIO 服务端的取值未公开，跨 rank 比较等效学习率时注意这一点。
+- **采样 logprob 口径**：默认返回原始模型分布的 logprob（与训练端一致，ratio 在 on-policy 时≈1）。如果某个实验需要“经过 temperature / top-k 处理后”的 logprob，在配置里设置 `models.default.logprobs_mode: processed_logprobs`；这会让 OPSD 这类在 temperature≠1 下计算 reverse KL 的数值与默认口径不同。
+- 保存时的 `ttl_seconds` 被忽略（本地 checkpoint 不会过期，需要自己清理 `runs/` 目录）。
+- 兼容接口：`SamplingClient.task_id`（等于 `sampling_run_cuid`）、`Datum.validate_loss_inputs(loss_fn)`。
 - PyTRIO 服务端的具体数值实现（kernel、精度、归一化细节）不公开，本地实现按文档语义复现，数值不会逐位一致。
 
 ## 测试

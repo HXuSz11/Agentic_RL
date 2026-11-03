@@ -14,7 +14,7 @@
 >
 > 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索环境不变，仍调用 DeepSeek 官方 Search API 或 Wikipedia。
 >
-> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（知乎 / 小红书主页见上方徽章）与 Datawhale 社区。
+> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >
@@ -626,7 +626,7 @@ uv run python -m localtrio info   # 确认 4 张 A6000 与 GPU 布局
 swanlab login              # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-不需要 `trio login`，也没有 API Key 或计费：训练与采样都跑在本机，默认 GPU0 训练、GPU1/2/3 采样，不需要任何配置文件。模型默认从 HuggingFace 下载，国内网络可设置 `HF_ENDPOINT` 或 `LOCALTRIO_MODEL_SOURCE=modelscope`。
+不需要 `trio login`，训练侧也没有 API Key 或计费（搜索 API 的 Key 见第 3 步）：训练与采样都跑在本机，默认 GPU0 训练、GPU1/2/3 采样，不需要任何配置文件。模型默认从 HuggingFace 下载，国内网络可设置 `HF_ENDPOINT` 或 `LOCALTRIO_MODEL_SOURCE=modelscope`。
 
 ### 2. 下载并整理数据
 

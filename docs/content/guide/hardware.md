@@ -75,7 +75,7 @@ RL 训练里大部分时间花在采样，所以默认把 3 张卡都给 vLLM。
    - 9B 以上用双卡训练布局。
 2. **采样卡 OOM / vLLM 启动失败**：
    - 调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `max_model_len`（如 32768）；
-   - `compute_logprobs` 很长的序列时，vLLM 要为每个 prompt token 算整词表 logprob，可设置 `max_num_batched_tokens: 2048` 限制单次预填充的长度；
+   - `compute_logprobs` / prompt logprobs 要为每个 prompt token 算整词表 fp32 logprob，显存尖峰与单次预填充长度 `max_num_batched_tokens` 成正比；默认 2048（约 4–5GB），仍然 OOM 时调到 1024，27B 教师预设已设为 1024；只做生成的引擎可以调大到 8192 以加快长 prompt 预填充；
    - 与训练共卡（`1gpu.yaml`）时把 vLLM 压到 0.35–0.40。
 3. **两个基模抢同一组卡**：localtrio 会直接报错并提示在 YAML 里单独分配 GPU。
 

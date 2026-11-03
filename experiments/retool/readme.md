@@ -14,7 +14,7 @@
 >
 > 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。代码解释器沙箱本来就在本地 CPU 上运行，保持不变。
 >
-> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。标题里的“两杯瑞幸”指原文的云端账单。感谢原作者（知乎 / 小红书主页见上方徽章）与 Datawhale 社区。
+> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。标题里的“两杯瑞幸”指原文的云端账单。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >
@@ -49,7 +49,7 @@ code_calls:                              1.24 → 1.72
 degenerate group（整组无梯度）:           0
 ```
 
-训练曲线之外，评测也在同一个窗口给出了正反馈。这是我们的 checkpoint 评测结果，后面「先看实验结果」一节还会完整展开这张图，现在可以先看 Base 和 Step 20：
+训练曲线之外，评测也在同一个窗口给出了正反馈。这是原文的 checkpoint 评测结果，后面「先看实验结果」一节还会完整展开这张图，现在可以先看 Base 和 Step 20：
 
 ![](./images/checkpoint_avg_pass_format.png)
 
