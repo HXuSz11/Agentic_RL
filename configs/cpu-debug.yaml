@@ -1,0 +1,3 @@
+# 没有 GPU 时的调试模式：HF 采样后端 + CPU 训练，只适合用微型模型检查代码路径。
+sampler_backend: hf
+gpus: []

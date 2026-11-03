@@ -1,0 +1,57 @@
+[project]
+name = "agentic-rl-local"
+version = "0.1.0"
+description = "Agentic RL Lab 的本地 GPU 版本：用 localtrio（transformers + PEFT + vLLM）替代 PyTRIO 云端训练"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    # 训练与采样（GPU 机器上运行）
+    "torch>=2.8",
+    "torchvision>=0.23",
+    "transformers>=5.0",
+    "peft>=0.17",
+    "accelerate>=1.10",
+    "safetensors>=0.5",
+    "vllm>=0.11",
+    "huggingface_hub>=0.34",
+    # 实验代码依赖（与原仓库一致，去掉 pytrio）
+    "datasets>=4.0",
+    "httpx>=0.28",
+    "math-verify>=0.8",
+    "matplotlib>=3.9",
+    "modelscope>=1.30",
+    "numpy>=2.0",
+    "openai>=1.100",
+    "pillow>=10",
+    "pydantic>=2.8",
+    "python-dotenv>=1.1",
+    "pyyaml>=6",
+    "swanlab>=0.6",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# Qwen3.5 线性注意力（Gated DeltaNet）的训练加速 kernel，强烈建议安装
+kernels = [
+    "flash-linear-attention>=0.3",
+    "causal-conv1d>=1.5",
+]
+alfworld = [
+    "alfworld==0.4.2",
+    "spacy==3.8.13",
+]
+dev = ["pytest>=8"]
+
+[project.scripts]
+localtrio = "localtrio.__main__:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["localtrio*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

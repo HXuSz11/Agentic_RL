@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[codz]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# 密钥与本地配置
+.env
+.envrc
+**/.env
+!**/.env.example
+/localtrio.yaml
+
+# localtrio 运行产物（默认在 ~/.cache/localtrio，这里防止误把自定义 home 放进仓库）
+localtrio-home/
+runs/
+*.log
+
+# 实验数据集与评测输出（由各章脚本下载 / 生成）
+experiments/*/datasets/
+experiments/*/eval-results/
+experiments/*/eval_results/
+experiments/*/eval_result/
+experiments/*/eval-results*.json
+experiments/*/outputs/
+experiments/*/train_results/
+experiments/*/analysis_results/
+experiments/tournament-grpo/dev.md
+experiments/tournament-grpo/configure_judge.py
+**/swanlog/*
+!**/swanlog/.gitignore
+*.swanlab
+
+# 网站
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/.temp/
+# 由 experiments/*/readme.md 与 start.md 生成，运行 npm run docs:prepare
+docs/content/experiments/*/
+docs/content/public/media/
+
+# 系统
+.DS_Store

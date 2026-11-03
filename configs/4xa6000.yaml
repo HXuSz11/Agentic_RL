@@ -1,0 +1,20 @@
+# 4×A6000（48GB）默认布局：单一基模的 RL / SFT 章节
+#   GPU 0      : LoRA 训练（transformers + PEFT，bf16 + 梯度检查点）
+#   GPU 1,2,3  : vLLM 采样，3 个副本做 data parallel，LoRA 热加载
+# 适用：GRPO、Vision GRPO、Jev、DAPO、GSPO、OPSD、AgentOPSD、Medical OPD、
+#       Search-R1、ReTool、ALFWorld、TEMPO、Spec-o3（4B）、Tournament-GRPO
+# 这也是不提供任何配置文件时的内置默认值。
+home: ~/.cache/localtrio          # 权重与日志目录，可改到大容量磁盘
+model_source: auto                # auto | huggingface | modelscope（国内网络建议 modelscope）
+trainer:
+  gpus: [0]
+  attn_implementation: sdpa       # 装了 flash-attn 可改为 flash_attention_2
+  gradient_checkpointing: true
+  max_tokens_per_microbatch: 16384
+  lora_target_modules: all-linear # vLLM 报 LoRA 模块不支持时改为 standard
+models:
+  default:
+    gpus: [1, 2, 3]
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    max_num_seqs: 256

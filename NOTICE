@@ -1,0 +1,19 @@
+Agentic RL Lab · Local GPU Edition
+
+This repository is a modified version of Datawhale Agentic RL Lab
+(https://github.com/datawhalechina/agentic-rl-lab), licensed under the
+Apache License, Version 2.0. Original tutorial content, experiment code and
+figures are by KMnO4-zx and the Agentic RL Lab contributors (including MRLE
+for Tournament-GRPO).
+
+Modifications in this repository:
+- Added `localtrio/`, a local implementation of the PyTRIO-style training and
+  sampling API built on Hugging Face transformers, PEFT and vLLM.
+- Replaced `import pytrio as trio` with `import localtrio as trio` in the
+  experiment code and adapted cloud-specific code paths (remote checkpoint
+  paths, the PyTRIO OpenAI-compatible endpoint, login and billing notes).
+- Rewrote the chapter documentation and the website for running on local GPUs
+  (4x NVIDIA RTX A6000), added GPU layout presets, tests and guides.
+
+Experiment results and figures reproduced from the original tutorial were
+obtained by the original authors on the PyTRIO service.

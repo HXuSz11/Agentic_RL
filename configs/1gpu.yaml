@@ -1,0 +1,10 @@
+# 只有 1 张 48GB 卡时：训练与采样共用 GPU 0（vLLM 只占 40% 显存）
+# 4B 模型可以跑通全部单基模章节，但速度约为 4 卡布局的 1/3～1/4。
+trainer:
+  gpus: [0]
+  max_tokens_per_microbatch: 8192
+models:
+  default:
+    gpus: [0]
+    gpu_memory_utilization: 0.40
+    max_num_seqs: 128
