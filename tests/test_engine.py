@@ -96,7 +96,7 @@ def test_builtin_loss_values(engine, loss_fn):
         elif loss_fn == "cispo":
             ref = -ratio.clamp(0.9, 1.1) * lp * adv
         else:
-            ref = -(lp * adv - 0.5 * 0.05 * (lp - old) ** 2)
+            ref = torch.where(adv != 0, -(lp * adv - 0.5 * 0.05 * (lp - old) ** 2), 0.0)
         total += float(ref.sum())
     assert out["metrics"]["loss_sum"] == pytest.approx(total, rel=1e-4, abs=1e-4)
     active = sum(len(d["inputs"]["target_tokens"]) for d in data)
@@ -426,3 +426,42 @@ def test_failed_create_run_reports_root_cause(text_model):
         eng.create_run("bad", rank=0, seed=0, train_mlp=True, train_attn=True, train_unembed=False)
     with pytest.raises(RuntimeError, match="创建失败"):
         eng.forward("bad", [text_datum(np.random.default_rng(0), 5, len(eng.tokenizer))], "cross_entropy", None, False, False)
+
+
+def test_dro_ignores_zero_advantage_placeholders(engine):
+    """prompt 位置的 target 0 / logprob 0 / advantage 0 占位对 dro 的 loss 和梯度贡献为 0。"""
+    rng = np.random.default_rng(12)
+    vocab = len(engine.tokenizer)
+    data = [text_datum(rng, n, vocab, prompt=4) for n in (9, 13)]
+    for d in data:
+        d["inputs"]["advantages"][:] = 0.0  # 退化的 GRPO 组：整批 advantage 全为 0
+    zero_grads(engine, "run_a")
+    out = engine.forward("run_a", data, "dro", {"beta": 0.5}, auto_shift=False, backward=True)
+    for item in out["loss_fn_outputs"]:
+        np.testing.assert_array_equal(item["elementwise_loss"], 0.0)
+    assert out["metrics"]["loss_sum"] == 0.0
+    assert lora_grads(engine, "run_a").abs().max() == 0
+    zero_grads(engine, "run_a")
+
+
+def test_state_saved_before_first_step_restores_with_optimizer(text_model, tmp_path):
+    """第一次 optim_step 之前 save_state 的目录也能用 *_with_optimizer 恢复（全新 AdamW）。"""
+    import json
+
+    eng = make_engine(text_model)
+    eng.create_run("p", rank=4, seed=3, train_mlp=True, train_attn=True, train_unembed=False)
+    eng.save("p", str(tmp_path / "s0"), kind="state")
+    assert not (tmp_path / "s0" / "optimizer.pt").exists()
+    assert json.loads((tmp_path / "s0" / "localtrio_meta.json").read_text())["has_optimizer"] is False
+    eng.create_run("q", rank=4, seed=9, train_mlp=True, train_attn=True, train_unembed=False, init_state=str(tmp_path / "s0"), load_optimizer=True)
+    assert eng.runs["q"].optimizer is None
+    data = [text_datum(np.random.default_rng(13), 10, len(eng.tokenizer))]
+    eng.forward("q", data, "importance_sampling", None, False, True)
+    assert eng.optim_step("q", {"learning_rate": 1e-2})["step"] == 1.0
+    # 已有优化器的 run 再 load_state_with_optimizer 这个目录：优化器状态回到“全新”
+    eng.load_state("q", str(tmp_path / "s0"), load_optimizer=True)
+    assert eng.runs["q"].optimizer is None
+    # sampler 权重目录仍然拒绝带优化器恢复
+    eng.save("p", str(tmp_path / "w"), kind="sampler")
+    with pytest.raises(FileNotFoundError, match="optimizer.pt"):
+        eng.load_state("q", str(tmp_path / "w"), load_optimizer=True)

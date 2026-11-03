@@ -139,6 +139,6 @@ print(fwd_bwd.result().metrics)  # loss_sum / loss_mean / token_count
 
 - **clip 用的是 ratio 的绝对上下界**。`clip_low_threshold` / `clip_high_threshold` 对应公式里的 `1 - ε_low` / `1 + ε_high`，所以 `ε = 0.2` 要写成 `0.8` 和 `1.2`。
 - **不是 `.sum()`，而是按整个 logical batch 的 active token 数归一化**。一次 `forward_backward` 里的所有样本共享同一个分母，即使训练端为了省显存把它们拆成多个 micro-batch，梯度也和整批一起算相同。`target_tokens == -100` 的位置不参与计算，也不计入分母；advantage 为 0 的位置（比如 prompt）loss 为 0，但只要 target 不是 -100 就仍计入分母。分母口径可以用配置项 `trainer.loss_normalization` 改成 `samples` 或 `sum`。
-- **自定义 loss 不再额外归一化**。`forward_backward_custom` 回传的梯度严格等于你自己写的 loss 的梯度，所以 [GRPO 一章](../grpo/readme.md) 里用 custom loss 写的 CISPO 保持了 `.sum()` 的口径。整体尺度对 Adam 影响不大，但开了 `grad_clip_norm` 时就会有区别。
+- **自定义 loss 不再额外归一化**。localtrio 默认（`trainer.custom_loss_normalization: none`）下，`forward_backward_custom` 回传的梯度严格等于你自己写的 loss 的梯度，所以 [GRPO 一章](../grpo/readme.md) 里用 custom loss 写的 CISPO 保持了 `.sum()` 的口径。原版 PyTRIO 0.2.9 的 SDK 则把 custom loss 换成 `weights = -dL/dlogprob` 的 `cross_entropy` 再提交，并把梯度非 0 的 token 数作为分母信息发给服务端（SDK 注释只保证梯度方向相同），实际尺度可能多除以这个 token 数；想按这个口径训练，设 `trainer.custom_loss_normalization: same_as_builtin`，分母就沿用上一条的 `trainer.loss_normalization`。整体尺度对 Adam 影响不大，但开了 `grad_clip_norm` 时就会有区别。
 
 更完整的 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)。下一篇 [GRPO](../grpo/readme.md) 就会用同一套 rollout 数据，把这三个 loss 放在一起跑。

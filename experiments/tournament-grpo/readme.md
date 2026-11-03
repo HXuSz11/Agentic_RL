@@ -15,7 +15,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 的梯度严格等于自定义 loss 的梯度）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
+> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 默认的梯度严格等于自定义 loss 的梯度，与 PyTRIO SDK 的尺度差异见第 5.5 节）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢 MRLE 与 Datawhale 社区。
 
@@ -228,7 +228,7 @@ for repeat in range(TOURNAMENT_REPEATS):           # M = 4
 
 ### 5.5 Advantage 与 PPO loss
 
-advantage 是第 4 节的组内标准化。loss 按作者的 vanilla PPO 写成自定义 loss（`train.py` 的 `ppo_objective`），通过 `forward_backward_custom` 提交；localtrio 先前向拿到可求导的 logprob，在主进程里算 loss，再把梯度反传到 LoRA，得到的梯度严格等于这个 loss 的梯度：
+advantage 是第 4 节的组内标准化。loss 按作者的 vanilla PPO 写成自定义 loss（`train.py` 的 `ppo_objective`），通过 `forward_backward_custom` 提交；localtrio 先前向拿到可求导的 logprob，在主进程里算 loss，再把梯度反传到 LoRA。在 localtrio 默认设置（`trainer.custom_loss_normalization: none`）下，得到的梯度严格等于这个 loss 的梯度：
 
 ```python
 log_ratio = (current - old).clamp(-20.0, 20.0)
@@ -242,6 +242,8 @@ loss = losses.mean()                                   # 整个 batch 的 assist
 ```
 
 没有 KL 项，也没有熵项。每批只更新一次，所以 old logprob 直接取训练端前向的 `current.detach()`。此时 ratio 恒为 1、clip 不会触发，但梯度仍然是 $-A \cdot \nabla \log \pi$，等价于作者的设置。如果以后改成同一批数据更新多次，就必须在第一次更新前把 old 固定下来。
+
+> **梯度尺度：** 上面的 `losses.mean()` 已经按 token 取了均值。原版 PyTRIO 0.2.9 的 SDK 会把 custom loss 换成 `weights = -dL/dlogprob` 的 `cross_entropy` 再提交，并把梯度非 0 的 token 数作为分母信息发给服务端（SDK 注释只保证参数梯度的方向相同），所以原文在 PyTRIO 上的实际梯度可能还多除了这个 token 数。本章开了 `grad_clip_norm=1.0`，尺度会影响裁剪是否触发：localtrio 默认的梯度更大，更容易被裁到 1.0。想按 SDK 的口径训练，在 localtrio 配置里设 `trainer.custom_loss_normalization: same_as_builtin`，详见 [localtrio 指南](../../docs/content/guide/localtrio.md#loss-语义)。
 
 ### 5.6 与作者实现的差异
 

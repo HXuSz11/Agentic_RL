@@ -13,7 +13,8 @@ cispo                   ``-sg(clip(ratio, lo, hi)) * lp * A``
 dro                     ``-(lp * A - 0.5 * beta * (lp - old) ** 2)``
 ======================  ================================================
 
-``target_tokens == -100`` 的位置不参与计算。``loss_fn_config`` 中的
+``target_tokens == -100`` 的位置不参与计算；``dro`` 另外只统计 ``A != 0`` 的位置
+（分母同样是 advantage 非零的 token 数）。``loss_fn_config`` 中的
 ``clip_low_threshold`` / ``clip_high_threshold`` 是 ratio 的绝对上下界（不是 epsilon）。
 """
 
@@ -126,6 +127,9 @@ def per_token_loss(
         elif loss_fn == "dro":
             beta = float(config.get("beta", 0.05))
             loss = -(lp * adv - 0.5 * beta * (lp - old) ** 2)
+            # 只统计 A != 0 的位置，与分母 total_advantage_tokens 同口径；否则 prompt /
+            # observation 的 target 0、advantage 0 占位会被 0.5*beta*lp**2 推高 p(token 0)
+            loss = torch.where(adv != 0, loss, torch.zeros_like(loss))
         else:  # pragma: no cover - normalize_loss_fn 已拦截
             raise ValueError(loss_fn)
     return torch.where(mask, loss, torch.zeros_like(loss))

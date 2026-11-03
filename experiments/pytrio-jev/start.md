@@ -118,8 +118,7 @@ trainer:
 models:
   default:
     gpus: [1, 2, 3]
-    gpu_memory_utilization: 0.80    # 采样 OOM 时调小
-    max_num_batched_tokens: 1024    # 默认 2048；长 prompt + prompt logprobs 显存紧张时调小
+    gpu_memory_utilization: 0.80    # 采样 OOM 时调小（也给 prompt logprobs 的显存尖峰留余量）
 ```
 
 ```bash
@@ -127,7 +126,7 @@ LOCALTRIO_CONFIG=../../my-jev.yaml uv run python train.py ...
 ```
 
 - **训练 OOM**：调小 `trainer.max_tokens_per_microbatch`（如 8192 或 4096）。它只改变 micro-batch 切分，梯度仍按整个 batch 的 active token 数归一化，不改变实验设置；不建议改 `--batch-size`。
-- **评测 / 校准时 vLLM OOM**：受限 softmax 需要整段 prompt 的 top-k prompt logprobs，长 prompt 比较吃显存。依次尝试调小 `--concurrency`、把 `models.default.max_num_batched_tokens` 从默认 2048 调小到 1024、调低 `models.default.gpu_memory_utilization`。
+- **评测 / 校准时 vLLM OOM**：受限 softmax 需要整段 prompt 的 top-k prompt logprobs。vLLM 0.33 按固定 1024 行分块计算，额外尖峰约 0.5–1GB，与 `max_num_batched_tokens` 无关。依次尝试调小 `--concurrency`、调低 `models.default.gpu_memory_utilization`。
 - **vLLM 报 LoRA 不支持某个模块**（如 Qwen3.5 线性注意力的 `in_proj_*` / `out_proj`）：把 `trainer.lora_target_modules` 改成 `standard`（只用 q/k/v/o + gate/up/down），然后**重新训练**，已有 adapter 无法直接转换。
 - **报 `prompt logprobs ... max_logprobs`**：某个字段的候选数超过了 vLLM 的上限（默认 64），调大 `models.default.max_logprobs`。
 - **报 `trio://` 是 PyTRIO 云端路径**：本地版只接受 `save_weights_for_sampler` 返回的本地目录，请把命令里的 `trio://...` 换成 `~/.cache/localtrio/runs/...` 下的目录。

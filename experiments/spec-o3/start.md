@@ -236,7 +236,7 @@ LOCALTRIO_CONFIG=my-spec-o3.yaml uv run python train_rl.py ...
 
 **vLLM 启动失败或采样卡 OOM**：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `models.default.max_model_len: 20480`（需大于 `--max-seq-len` 16384）。
 
-**长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是为 `compute_logprobs` 控制显存尖峰设的；本章只做生成、不算 prompt logprob，可以调到 8192 加快多轮图文长 prompt 的预填充。
+**长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是偏保守的预填充分块；本章只做生成，可以调到 8192 加快多轮图文长 prompt 的预填充，代价是 KV cache 略少。
 
 **vLLM 报单个 prompt 的图片数超限**：localtrio 默认 `limit_mm_per_prompt: {image: 8, video: 0}`，正好覆盖 `--max-turns 8`（1 张初始图 + 7 张工具图），按本页命令不会超限。把 `--max-turns` 调到 N>8 时，在 `models.default` 下设置 `limit_mm_per_prompt: {image: N, video: 0}`；这一项会整体替换默认值，记得保留 `video: 0`，否则 vLLM 会重新为视频预留编码显存。
 

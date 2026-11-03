@@ -306,9 +306,12 @@ def make_ppo_loss_fn(
             "ppo/clip_low": preset.clip_low,
             "ppo/clip_high": preset.clip_high,
         }
-        # 与 PyTRIO 相同，localtrio 先在本地对返回的 loss 求 dL/dlogprob，再在 trainer 中
-        # 以 sum(g · logprob) 作为代理目标反传到 LoRA，参数梯度严格等于这里 PPO loss 的梯度；
-        # 不会再额外除以 token 数，因此 sample mean / token mean 的分母完全由本函数决定。
+        # localtrio 先在本地对返回的 loss 求 dL/dlogprob，再在 trainer 中以 sum(g · logprob)
+        # 作为代理目标反传到 LoRA。默认 trainer.custom_loss_normalization: none 时，参数梯度
+        # 严格等于这里 PPO loss 的梯度，不会再额外除以 token 数，因此 sample mean / token mean
+        # 的分母完全由本函数决定。PyTRIO 0.2.9 SDK 会把它转成 weights=-grad 的 cross_entropy
+        # 提交，并附带梯度非 0 的 token 数作为分母信息，服务端的实际尺度可能不同；设
+        # same_as_builtin 可按这个口径训练。
         return ppo_loss, metrics
 
     # 返回捕获本批 training_datums 和算法 preset 的 custom loss 回调。

@@ -509,7 +509,7 @@ custom loss 的分工（接口与 PyTRIO 相同，下面是 localtrio 的实现�
 1. trainer 子进程（GPU0）负责 forward，算出当前模型对 `target_tokens` 的逐 token logprob。
 2. 训练脚本所在的主进程里，`loss_fn` 接收这些 logprob（CPU 上的 float32 张量，`requires_grad=True`）。
 3. 你用 torch 写任意 loss，返回 `(loss, metrics)`。
-4. localtrio 对 loss 求导得到 `dL/dlogprob`，把它送回 trainer，再以 `sum(g * logprob)` 为代理 loss 反向传播到 LoRA。这样得到的参数梯度严格等于你那个 loss 的梯度，不会额外归一化。
+4. localtrio 对 loss 求导得到 `dL/dlogprob`，把它送回 trainer，再以 `sum(g * logprob)` 为代理 loss 反向传播到 LoRA。在默认设置（`trainer.custom_loss_normalization: none`）下，这样得到的参数梯度严格等于你那个 loss 的梯度，不会额外归一化。原版 PyTRIO SDK 会再附带一个 token 数分母，尺度可能不同，细节见 [损失函数篇](../loss-functions/readme.md) 第 5 节。
 
 也就是说，`loss_fn` 本身不碰模型参数；它只定义“这些 logprob 应该怎么变成 loss”。代价是 custom loss 比内置 loss 多一次前向（先拿 logprob，再带梯度前向 + 反向），每步会慢一些。
 

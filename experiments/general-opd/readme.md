@@ -458,7 +458,7 @@ models:
     max_model_len: 16384
 ```
 
-第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`。localtrio 只在同一张卡上各采样引擎的 `gpu_memory_utilization` 之和超过 0.98 时拒绝布局，但不要贴着这个上限配：teacher 做 `compute_logprobs` 时要为每个 prompt token 计算整词表 fp32 logprob，这个显存尖峰不在 vLLM 按 `gpu_memory_utilization` 预留的预算里（启动时的显存估算不包含它），默认 `max_num_batched_tokens=2048` 时约 4–5GB。所以两者合计建议留在 0.85–0.9 左右，并把 teacher 的 `max_num_batched_tokens` 调到 1024：
+第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`。localtrio 只在同一张卡上各采样引擎的 `gpu_memory_utilization` 之和超过 0.98 时拒绝布局，但不要贴着这个上限配：teacher 做 `compute_logprobs` 时要为 prompt token 计算整词表 logprob。vLLM 0.33 按固定 1024 行分块计算，额外的显存尖峰约 0.5–1GB，启动时按 `gpu_memory_utilization` 做的显存估算只覆盖其中一部分。所以两者合计建议留在 0.85–0.9 左右：
 
 ```yaml
 # 4B student + 9B teacher（2 张卡，训练独占 GPU0，student 与 teacher 的 vLLM 共用 GPU1；估算、未实测）
@@ -473,7 +473,6 @@ models:
     gpu_memory_utilization: 0.52
     enable_lora: false
     max_model_len: 16384
-    max_num_batched_tokens: 1024 # 压低 compute_logprobs 的显存尖峰
 ```
 
 两个引擎挤在一张卡上，各自能用的 KV cache 都会变少。
@@ -484,7 +483,7 @@ models:
 
 - **训练 OOM**：在自己的配置里调小 `trainer.max_tokens_per_microbatch`（如 8192）。它只改变 micro-batch 切分，梯度仍按整个 batch 归一化，不改变实验设置。
 - **teacher 的 vLLM 启动时 OOM**：把预设复制成自己的 YAML，调小 teacher 的 `max_model_len`（如 8192，需大于 prompt + `--max-tokens`）或 `gpu_memory_utilization`。
-- **teacher 启动成功，但在运行中做 `compute_logprobs` 时 OOM**：这是预填充时整词表 fp32 logprob 的显存尖峰，与单次预填充长度 `max_num_batched_tokens` 成正比（默认 2048，约 4–5GB）。在自己的 YAML 里把 `models.<teacher 基模名>.max_num_batched_tokens` 调到 1024（27B 预设已经是 1024；teacher 是 student 基模上的专家 LoRA 时改 `models.default`）；teacher 与其他引擎共卡时，再调低这张卡上各引擎的 `gpu_memory_utilization`，给尖峰留出余量。详见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+- **teacher 启动成功，但在运行中做 `compute_logprobs` 时 OOM**：这是计算整词表 prompt logprob 时的显存尖峰。vLLM 0.33 固定按 1024 行分块计算，尖峰约 0.5–1GB，与 `max_num_batched_tokens` 无关，所以调小它没有用。在自己的 YAML 里调低 `models.<teacher 基模名>.gpu_memory_utilization`（teacher 是 student 基模上的专家 LoRA 时改 `models.default`），给尖峰留出余量；teacher 与其他引擎共卡时，这张卡上各引擎的 `gpu_memory_utilization` 都要一起调低。还不够时再调小 teacher 的 `max_model_len`。详见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
 - **vLLM 报 LoRA 不支持某个模块**（如 Qwen3.5 线性注意力的 `in_proj_*` / `out_proj`）：在配置里把 `trainer.lora_target_modules` 改成 `standard`（只用 q/k/v/o + gate/up/down）后重新训练。
 - **报 `trio://` 是 PyTRIO 云端路径**：`--teacher-model-path` 等参数只接受本地目录，请换成 `~/.cache/localtrio/runs/...` 下的目录。
 - **teacher logprobs 长度不一致**：检查 student 和 teacher 的 tokenizer 是否兼容，见下文“保证 tokenizer 兼容”。

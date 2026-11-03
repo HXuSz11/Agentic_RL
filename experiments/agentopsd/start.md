@@ -255,8 +255,7 @@ trainer:
 models:
   default:
     gpus: [1, 2, 3]
-    gpu_memory_utilization: 0.80    # 默认 0.85
-    max_num_batched_tokens: 1024    # 默认 2048；调小可降低 Teacher compute_logprobs 的整词表 logprob 显存尖峰（预填充会稍慢）
+    gpu_memory_utilization: 0.80    # 默认 0.85；也给 Teacher compute_logprobs 的显存尖峰（约 0.5~1GB）留余量
     max_model_len: 16384            # 与 MAX_SEQUENCE_TOKENS 对齐
 ```
 

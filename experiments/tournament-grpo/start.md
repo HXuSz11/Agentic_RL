@@ -246,7 +246,7 @@ LOCALTRIO_CONFIG=my-tournament.yaml uv run python experiments/tournament-grpo/tr
 
 **vLLM 加载 LoRA 时报 target modules 不支持**：把 `trainer.lora_target_modules` 改成 `standard`（只训练 q/k/v/o + MLP），重新训练。
 
-**长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是为 `compute_logprobs` 控制显存尖峰设的；本章只做生成、不算 prompt logprob，可以调到 8192 加快多轮长 prompt 的预填充。
+**长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是偏保守的预填充分块；本章只做生成，可以调到 8192 加快多轮长 prompt 的预填充，代价是 KV cache 略少。
 
 **训练中途报 judge 失败并停止**：这是有意的设计（不用随机胜者更新）。修好网络或 Key 后用 `--resume` 从最近的 `checkpoint-step-N.json` 继续。
 

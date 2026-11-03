@@ -58,7 +58,7 @@ optim_step ──► save_weights_and_get_sampling_client()
 | `create_sampling_client(base_model, model_path=None)` | 同名（含 `_async`） | `model_path` 是本地 sampler_weights 目录 |
 | `training_client.forward(data, loss_fn)` | 同名 | 无梯度前向，返回逐 token `logprobs` |
 | `forward_backward(data, loss_fn, loss_fn_config)` | 同名 | 前向 + 反向，梯度累积到下一次 `optim_step` |
-| `forward_backward_custom(data, loss_fn)` | 同名 | 先前向取 logprob，主进程算 loss 与 `dL/dlogprob`，再在 trainer 上反传（梯度严格等于用户 loss 的梯度） |
+| `forward_backward_custom(data, loss_fn)` | 同名 | 先前向取 logprob，主进程算 loss 与 `dL/dlogprob`，再在 trainer 上反传（默认梯度严格等于用户 loss 的梯度，尺度见下文 [Loss 语义](#loss-语义)） |
 | `optim_step(AdamParams)` | 同名 | `torch.optim.AdamW`，每步可改 lr；`grad_clip_norm>0` 时裁剪；返回 `grad_norm` |
 | `save_state(name)` / `save_weights_for_sampler(name)` | 同名 | 返回**本地绝对路径**；`ttl_seconds` 被忽略 |
 | `save_weights_and_get_sampling_client()` | 同名（含 `_async`） | 见上节 |
@@ -80,8 +80,9 @@ optim_step ──► save_weights_and_get_sampling_client()
 | `cispo` | `-sg(clip(ratio, lo, hi)) · lp · A` | 默认 `lo=0`、`hi=4` |
 | `dro` | `-(lp · A - 0.5 · β · (lp - old)²)` | `beta`（默认 0.05） |
 
-- `target_tokens == -100` 的位置不参与计算；prompt 位置一般用 target 0、advantage 0 占位（贡献为 0）。
+- `target_tokens == -100` 的位置不参与计算；prompt 位置一般用 target 0、advantage 0 占位（贡献为 0；`dro` 只对 advantage 非 0 的位置计 loss，占位同样不产生梯度）。
 - **归一化**：一次 `forward_backward` 调用就是一个 logical batch，内置 loss 的梯度按整批的 token 数归一化，分母口径与 PyTRIO SDK 统计 `total_active_tokens` / `total_advantage_tokens` 一致：策略 loss（`importance_sampling` / `ppo` / `cispo`）的 active token = `target != -100` 的位置，prompt / observation 位置若用 target 0 占位也算；`cross_entropy` 只算 `target != -100` 且 `weights != 0` 的位置，所以 SFT 里 weight 为 0 的 prompt 不算；`dro` 除以 advantage 非 0 的 active token 数（`total_advantage_tokens`）；`auto_shift=True` 时每条样本的第一个 label 不算。micro-batch 拆分不改变梯度。全局可在配置里改成 `samples`（除以样本数）或 `sum`（Tinker 风格，不归一化），也可以按调用覆盖：`forward_backward(data, "ppo", {"clip_low_threshold": 0.8, "clip_high_threshold": 1.28, "normalization": "sum"})`。原教程各章对 PyTRIO 服务端口径的假设不完全相同，相关章节的快速启动里写了建议值；Adam 对整体常数缩放不敏感，口径差异主要影响不同 step 之间的相对权重。
+- **custom loss 的尺度**：`forward_backward_custom` 默认（`trainer.custom_loss_normalization: none`）不再额外归一化，参数梯度严格等于你返回的 loss 的梯度，分母完全由你的 loss 自己决定。PyTRIO 0.2.9 的 SDK 则把 custom loss 换成 `weights = -dL/dlogprob` 的 `cross_entropy` 再提交，并把梯度非 0 的 token 数作为 logical batch 的分母信息发给服务端（SDK 注释只保证参数梯度的方向相同），所以原文在 PyTRIO 上的实际梯度可能还多除了这个随 step 变化的 token 数。想按这个口径训练，设 `trainer.custom_loss_normalization: same_as_builtin`，分母沿用上一条的 `trainer.loss_normalization`（默认 `active_tokens` 下就是梯度非 0 的 token 数）。Adam 对整体尺度不敏感，开了 `grad_clip_norm` 时差别更明显。
 - 返回的 `metrics` 与 PyTRIO 同名：`loss_sum`、`token_count`、`loss_mean = loss_sum / token_count`；内置 loss 的 `token_count` 一律是上面的 `total_active_tokens`（`dro` 也是，不是它的归一化分母）；custom loss 返回的指标会合并进去。
 - 采样端返回的 logprob 是**原始模型分布**（vLLM `logprobs_mode=raw_logprobs`），与训练端 `forward` 口径一致，on-policy 时 ratio ≈ 1。
 
@@ -133,13 +134,14 @@ trainer:
   max_tokens_per_microbatch: 16384
   lora_target_modules: all-linear
   loss_normalization: active_tokens
+  custom_loss_normalization: none # forward_backward_custom 不再额外归一化；same_as_builtin 按 PyTRIO SDK 口径
 models:
   default:                        # 训练基模的采样引擎
     gpus: [1]                     # 与下面的教师错开；不写时自动取 trainer 和教师之外的卡
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_model_len: null           # null = 模型自带上限
-    max_num_batched_tokens: 2048  # 预填充分块；compute_logprobs 的显存尖峰与它成正比
+    max_num_batched_tokens: 2048  # 预填充分块；调大加快长 prompt 预填充（与 compute_logprobs 的显存尖峰无关）
   Qwen/Qwen3.6-27B:               # 其他基模（例如 OPD 教师）必须单独分配 GPU
     gpus: [2, 3]
     tensor_parallel_size: 2
@@ -173,7 +175,7 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
 ## 与 PyTRIO 的已知差异
 
 - 没有远程控制面：`create_rest_client()` 不可用，checkpoint 就是磁盘上的目录。
-- LoRA rank 允许 1–128（PyTRIO 为 4–64）；vLLM 侧 `max_lora_rank` 默认 64，用更大的 rank 时同步修改 `models.default.max_lora_rank`。
+- LoRA rank 允许 1–128（PyTRIO 为 4–64）；vLLM 侧 `max_lora_rank` 默认 64，用更大的 rank 时同步修改 `models.default.max_lora_rank`。vLLM 只接受 1/8/16/32/64/128 等取值，填其他值（如 96）会自动向上取整（→ 128）。
 - **`train_unembed`**：PyTRIO 默认 `True`（输出层也参与训练）。vLLM 0.33 只为纯文本 Qwen3.5 类声明了 `lm_head` LoRA，本 Lab 加载的 Qwen3.5 多模态类没有声明，采样端可能无法加载带 `lm_head` 的 adapter，所以本地默认忽略它。设置 `trainer.allow_unembed: true` 后会以 LoRA 形式训练 `lm_head`（训练端的 logprob 计算已支持），请先确认你的 vLLM 能加载这样的 adapter。这是本地结果与原文可能不同的原因之一。
 - **LoRA 缩放**：`lora_alpha` 固定为 32（`trainer.lora_alpha` 可改），缩放系数 `alpha / rank` 随 rank 变化：rank 32 为 1，rank 64（OPSD）为 0.5。PyTRIO 服务端的取值未公开，跨 rank 比较等效学习率时注意这一点。
 - **采样 logprob 口径**：默认返回原始模型分布的 logprob（与训练端一致，ratio 在 on-policy 时≈1）。如果某个实验需要“经过 temperature / top-k 处理后”的 logprob，在配置里设置 `models.default.logprobs_mode: processed_logprobs`；这会让 OPSD 这类在 temperature≠1 下计算 reverse KL 的数值与默认口径不同。

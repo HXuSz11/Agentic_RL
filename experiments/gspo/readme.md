@@ -305,7 +305,9 @@ one sequence-level clipping decision
 
 每条 sequence 等权求和，再除以原始 rollout 的 sequence 数。退化组虽然没有送进 trainer 计算，它们原本为 0 的 objective 仍然留在分母里，因此过滤只节省计算，不会放大剩余样本的 loss。
 
-loss 算完后，localtrio 在主进程里用 autograd 求出 `dL/dlogprob`，再让 trainer 以 `sum(g · logprob)` 为代理目标反传到 LoRA。这样得到的参数梯度严格等于 GSPO loss 的梯度，不会再额外除以 token 数，所以“custom loss 自己处理分母”这一点在本地版同样成立，上面的 `normalization_sequences` 就是最终的分母。
+loss 算完后，localtrio 在主进程里用 autograd 求出 `dL/dlogprob`，再让 trainer 以 `sum(g · logprob)` 为代理目标反传到 LoRA。在 localtrio 的默认设置（`trainer.custom_loss_normalization: none`）下，这样得到的参数梯度严格等于 GSPO loss 的梯度，不会再额外除以 token 数，所以“custom loss 自己处理分母”这一点在本地版成立，上面的 `normalization_sequences` 就是最终的分母。
+
+> 原版 PyTRIO 0.2.9 的 SDK 会把 custom loss 换成 `weights = -dL/dlogprob` 的 `cross_entropy` 再提交一次，并把梯度非 0 的 token 数作为 logical batch 的分母信息发给服务端，SDK 注释只保证参数梯度的方向相同。所以原文在 PyTRIO 上的实际梯度可能还多除了这个随 step 变化的 token 数。这个 token 数只统计真正产生梯度的样本，因此“退化组留在分母里、过滤不放大剩余样本”的设计只在 localtrio 默认的尺度下严格成立。本章用 Adam、没有开 `grad_clip_norm`，整体尺度对更新的影响不大。想按 SDK 的口径训练，可在 localtrio 配置里设 `trainer.custom_loss_normalization: same_as_builtin`，此时分母沿用内置 loss 的 `trainer.loss_normalization`，默认的 `active_tokens` 下就是梯度非 0 的 token 数。
 
 ### 4. 一个 rollout batch 对应一次更新
 

@@ -5,8 +5,11 @@
 当前 logprob，sampling logprob 与 advantage 由 rollout 元数据传入。
 
 本地版中，localtrio 在主进程里对这里返回的 loss 求 dL/dlogprob，再在 trainer
-里以 ``sum(g · logprob)`` 反传到 LoRA，参数梯度严格等于该 loss 的梯度，不会再
-额外除以 token 数，因此 loss 的分母（normalization_sequences）由本文件决定。
+里以 ``sum(g · logprob)`` 反传到 LoRA。默认 ``trainer.custom_loss_normalization: none``
+时，参数梯度严格等于该 loss 的梯度，不会再额外除以 token 数，因此 loss 的分母
+（normalization_sequences）由本文件决定。PyTRIO 0.2.9 SDK 会把它转成
+``weights=-grad`` 的 cross_entropy 提交，并附带梯度非 0 的 token 数作为分母信息，
+服务端的实际尺度可能不同；设 ``same_as_builtin`` 可按这个口径训练。
 """
 
 from __future__ import annotations

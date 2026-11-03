@@ -39,7 +39,7 @@ uv run python experiments/grpo/01-demo-sync.py --steps 2 --batch-size 4 --group-
     --max-tokens 512 --swanlab-mode disabled
 ```
 
-`uv sync` 默认精确同步，会卸载这次命令没写上的 extra：之后再装 dev / alfworld 时把 kernels 一起写上（如 `uv sync --extra kernels --extra alfworld`），或者加 `--inexact`，详见[安装说明](./docs/content/guide/quickstart.md#获取代码与安装依赖)。
+需要 Linux x86_64 和 NVIDIA 驱动 ≥ 580（`uv.lock` 锁定的 torch 2.14 / vLLM 0.33 基于 CUDA 13.0）。`uv sync` 默认精确同步，会卸载这次命令没写上的 extra：之后再装 dev / alfworld 时把 kernels 一起写上（如 `uv sync --extra kernels --extra alfworld`），或者加 `--inexact`，详见[安装说明](./docs/content/guide/quickstart.md#获取代码与安装依赖)。
 
 更多：[安装与第一个实验](./docs/content/guide/quickstart.md) · [localtrio 原理与 API 对照](./docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](./docs/content/guide/hardware.md)
 

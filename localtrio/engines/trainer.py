@@ -600,9 +600,17 @@ class TrainerEngine:
                 if isinstance(value, set):
                     config[key] = sorted(value)
             (target / "adapter_config.json").write_text(json.dumps(config, indent=2, default=str))
-            meta = {**run.meta, "kind": kind, "step": run.step, "run_id": run.run_id, "saved_at": time.time()}
+            has_optimizer = kind == "state" and run.optimizer is not None
+            meta = {
+                **run.meta,
+                "kind": kind,
+                "step": run.step,
+                "run_id": run.run_id,
+                "saved_at": time.time(),
+                "has_optimizer": has_optimizer,
+            }
             (target / "localtrio_meta.json").write_text(json.dumps(meta, indent=2))
-            if kind == "state" and run.optimizer is not None:
+            if has_optimizer:
                 torch.save(run.optimizer.state_dict(), target / "optimizer.pt")
             size = sum(f.stat().st_size for f in target.iterdir() if f.is_file())
             backup = None
@@ -634,10 +642,15 @@ class TrainerEngine:
         run.step = int(meta.get("step", 0))
         if load_optimizer:
             opt_path = path / "optimizer.pt"
-            if not opt_path.exists():
+            if opt_path.exists():
+                run.optimizer = torch.optim.AdamW(run.params, lr=1e-4)
+                run.optimizer.load_state_dict(torch.load(opt_path, map_location="cpu", weights_only=True))
+            elif meta.get("kind") == "state" and not meta.get("has_optimizer", False):
+                # 第一次 optim_step 之前保存的 state 本来就没有 AdamW 状态：等价于全新的优化器，
+                # 下一次 optim_step 按当时的 AdamParams 创建
+                run.optimizer = None
+            else:
                 raise FileNotFoundError(f"{path} 没有 optimizer.pt（只有 save_state 保存的 checkpoint 才含优化器状态）")
-            run.optimizer = torch.optim.AdamW(run.params, lr=1e-4)
-            run.optimizer.load_state_dict(torch.load(opt_path, map_location="cpu", weights_only=True))
 
     def load_state(self, run_id: str, path: str, load_optimizer: bool) -> dict[str, Any]:
         run = self._run(run_id)

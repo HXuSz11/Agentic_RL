@@ -14,7 +14,8 @@ models:
     tensor_parallel_size: 2
     gpu_memory_utilization: 0.90
     max_model_len: 16384
-    # compute_logprobs 要为每个 prompt token 计算整词表 fp32 logprob（在一张卡上汇总），
-    # 27B 权重已占每卡约 27GB，这里把单次预填充压到 1024 token 防止显存尖峰
+    # 保守取值：27B 权重已占每卡约 27GB，预填充分块小一点，启动时估算的激活峰值更低，
+    # 给 KV cache 多留空间（代价是长 prompt 预填充稍慢）。compute_logprobs 的显存尖峰与它
+    # 无关：vLLM 0.33 固定按 1024 行分块计算 prompt logprobs
     max_num_batched_tokens: 1024
     enable_lora: false            # 教师只用基模；若教师是带 LoRA 的 checkpoint，改为 true

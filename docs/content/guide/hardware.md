@@ -76,7 +76,8 @@ RL 训练里大部分时间花在采样，所以默认把 3 张卡都给 vLLM。
 2. **采样卡 OOM / vLLM 启动失败**：
    - 启动时报 `Free memory on device ... is less than desired GPU memory utilization` 或 CUDA OOM（常见于同卡还有别的进程）：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75）；
    - 启动时报 `... KV cache is needed, which is larger than the available KV cache memory`（模型自带的 `max_model_len` 放不下）：设置 `models.default.max_model_len`（如 32768），或在显存允许时调大 `gpu_memory_utilization`，这时调小它只会让 KV cache 更少；
-   - `compute_logprobs` / prompt logprobs 要为每个 prompt token 算整词表 fp32 logprob，显存尖峰与单次预填充长度 `max_num_batched_tokens` 成正比；默认 2048（约 4–5GB），仍然 OOM 时调到 1024，27B 教师预设已设为 1024；只做生成的引擎可以调大到 8192 以加快长 prompt 预填充；
+   - 运行中做 `compute_logprobs` / prompt logprobs 时 OOM：vLLM 0.33 默认的 Model Runner V2 按固定 1024 行分块计算整词表 logprob，额外的显存尖峰约 0.5–1GB，不随 `max_num_batched_tokens` 变化，启动时的显存估算也只覆盖其中一部分。先调低这张卡上各引擎的 `gpu_memory_utilization` 给它留余量，再考虑调小 `max_model_len` 或并发数。调小 `max_num_batched_tokens` 只在设置了 `VLLM_USE_V2_MODEL_RUNNER=0`（旧 runner 会一次算完整个预填充块）时才压得住这个尖峰；
+   - `max_num_batched_tokens` 默认 2048。只做生成的引擎可以调大到 8192，加快长 prompt 预填充，代价是 KV cache 略少；
    - 与训练共卡（`1gpu.yaml`）时把 vLLM 压到 0.35–0.40。
 3. **两个基模抢同一组卡**：localtrio 会直接报错并提示在 YAML 里单独分配 GPU。
 

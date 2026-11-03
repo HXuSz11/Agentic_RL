@@ -248,7 +248,9 @@ uv run python train.py \
 - [`reward.py`](./reward.py)：数学答案判定和 Soft Overlong Punishment；
 - [`train.py`](./train.py)：统一的 GRPO/DAPO PPO 更新。
 
-PPO loss 通过 `forward_backward_custom` 在本地计算：localtrio 先做一次前向拿到当前策略的逐 token logprob，交给 `make_ppo_loss_fn()` 用 PyTorch 算出 loss，再把 `dL/dlogprob` 送回 trainer 反传到 LoRA。参数梯度严格等于这里返回的 loss 的梯度，不会再额外除以 token 数，所以 GRPO 的 sample mean 和 DAPO 的 token mean 完全由 `train.py` 自己决定，和原版 PyTRIO 的语义一致。
+PPO loss 通过 `forward_backward_custom` 在本地计算：localtrio 先做一次前向拿到当前策略的逐 token logprob，交给 `make_ppo_loss_fn()` 用 PyTorch 算出 loss，再把 `dL/dlogprob` 送回 trainer 反传到 LoRA。在 localtrio 的默认设置（`trainer.custom_loss_normalization: none`）下，参数梯度严格等于这里返回的 loss 的梯度，不会再额外除以 token 数，所以 GRPO 的 sample mean 和 DAPO 的 token mean 完全由 `train.py` 自己决定，这也是原作者写这份 loss 时的本意。
+
+> **与原版 PyTRIO 的一处尺度差异：** PyTRIO 0.2.9 的 SDK 会把 custom loss 换成 `weights = -dL/dlogprob` 的 `cross_entropy` 再提交一次，并把梯度非 0 的 token 数作为 logical batch 的分母信息一起发给服务端，SDK 注释只保证参数梯度的方向相同。所以原文在 PyTRIO 上的实际梯度可能还多除了这个随 step 变化的 token 数。本章用 Adam、没有开 `grad_clip_norm`，这个整体尺度对更新的影响不大。想按 SDK 的口径训练，可在 localtrio 配置里设 `trainer.custom_loss_normalization: same_as_builtin`，此时分母沿用内置 loss 的 `trainer.loss_normalization`，默认的 `active_tokens` 下就是梯度非 0 的 token 数。
 
 ### 数据
 

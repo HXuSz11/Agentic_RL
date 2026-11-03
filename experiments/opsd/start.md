@@ -153,13 +153,12 @@ micro-batch 只影响显存和速度，内置 `importance_sampling` loss 按整�
 
 **vLLM 在 Teacher 打分或评测时显存不足、提示 KV cache 不够**
 
-Teacher 的 `compute_logprobs` 要为带参考解答的整段 prompt 计算逐 token logprob，评测又允许单条回答长达 38,912 token，这两处对 vLLM 显存的压力最大。可以在配置文件里调低 `gpu_memory_utilization`，把 `max_num_batched_tokens` 从默认的 2048 调到 1024（`compute_logprobs` 要为每个 prompt token 算整词表 fp32 logprob，显存尖峰与它成正比，2048 约 4～5GB），并把 `max_model_len` 设成刚好够用的长度（评测需要 prompt + 38,912）：
+Teacher 的 `compute_logprobs` 要为带参考解答的整段 prompt 计算逐 token logprob，评测又允许单条回答长达 38,912 token，这两处对 vLLM 显存的压力最大。可以在配置文件里调低 `gpu_memory_utilization`，给 `compute_logprobs` 的显存尖峰留出余量（vLLM 0.33 按固定 1024 行分块计算整词表 prompt logprob，尖峰约 0.5–1GB，与 `max_num_batched_tokens` 无关），并把 `max_model_len` 设成刚好够用的长度（评测需要 prompt + 38,912）：
 
 ```yaml
 models:
   default:
     gpu_memory_utilization: 0.80
-    max_num_batched_tokens: 1024
     max_model_len: 40960
 ```
 

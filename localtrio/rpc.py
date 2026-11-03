@@ -214,6 +214,15 @@ class WorkerHandle:
                     )
                     return
             while True:
+                if not self._conn.poll(1.0):
+                    # vLLM 默认用 fork 启动 EngineCore，它继承了这条 socket：worker 进程被 OOM / SIGKILL
+                    # 等异常杀死时这里收不到 EOF，必须主动检查进程是否还在
+                    if self.proc.poll() is None or self._conn.poll(0):
+                        continue  # 进程退出前写出的结果仍要读完
+                    self._fail_all(f"{self.name} 进程已退出 (exit={self.proc.returncode})\n{self._log_tail()}")
+                    # 回收被 fork 出来、仍占着显存的 EngineCore 等同组子进程
+                    self._kill_process_group()
+                    return
                 msg = self._conn.recv()
                 kind = msg[0]
                 if kind == "ready":

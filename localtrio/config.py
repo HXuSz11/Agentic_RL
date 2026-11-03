@@ -103,6 +103,16 @@ class TrainerConfig:
     seed: int = 0
 
 
+# vLLM（0.33 的 config/lora.py: MaxLoRARanks）只接受这些 max_lora_rank
+VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
+
+
+def round_lora_rank(rank: int) -> int:
+    """把 max_lora_rank 向上取到 vLLM 接受的最近值（例如 96 → 128）；超出上限时原样返回。"""
+    rank = int(rank)
+    return next((r for r in VLLM_LORA_RANKS if r >= rank), rank)
+
+
 @dataclass
 class EngineConfig:
     """某个基模的采样引擎（vLLM 或 HF）。"""
@@ -112,14 +122,16 @@ class EngineConfig:
     gpu_memory_utilization: float = 0.85
     max_model_len: int | None = None
     max_num_seqs: int = 256
-    # 单次调度的 token 上限（预填充按此分块）。compute_logprobs / prompt logprobs 会为每个
-    # prompt token 计算整词表 fp32 logprob（Qwen3.5 词表约 25 万），显存尖峰约与它成正比：
-    # 2048 → 约 4~5GB。只做生成、不算 prompt logprob 时可调大以加快长 prompt 的预填充。
+    # 单次调度的 token 上限（长 prompt 的预填充按此分块）。调大可加快长 prompt 的预填充，
+    # 代价是启动时按它估算的激活显存更大、KV cache 略少。vLLM 0.33 默认的 Model Runner V2
+    # 按固定 1024 行分块计算 prompt logprobs，compute_logprobs 的额外显存尖峰约 0.5~1GB，
+    # 与这个值无关（只有设置 VLLM_USE_V2_MODEL_RUNNER=0 用旧 runner 时，尖峰才随它增长）。
     max_num_batched_tokens: int | None = 2048
     enable_prefix_caching: bool = True
     enforce_eager: bool = False
     dtype: str = "bfloat16"
     quantization: str | None = None
+    # 只能取 VLLM_LORA_RANKS 中的值；填其他值（如 96）时自动向上取整（→ 128）
     max_lora_rank: int = 64
     max_loras: int = 4
     max_cpu_loras: int = 8
@@ -227,7 +239,12 @@ def _from_dict(raw: dict[str, Any]) -> LocalConfig:
     models = raw.pop("models", None) or {}
     _merge_dataclass(cfg.trainer, trainer)
     for name, engine in models.items():
-        cfg.models[str(name)] = _merge_dataclass(EngineConfig(), engine or {})
+        merged = _merge_dataclass(EngineConfig(), engine or {})
+        rounded = round_lora_rank(merged.max_lora_rank)
+        if rounded != merged.max_lora_rank:
+            logger.info("models.%s.max_lora_rank=%s 不是 vLLM 接受的取值，按 %d 处理", name, merged.max_lora_rank, rounded)
+        merged.max_lora_rank = rounded
+        cfg.models[str(name)] = merged
     _merge_dataclass(cfg, raw)
     return cfg
 

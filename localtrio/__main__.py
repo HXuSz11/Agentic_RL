@@ -98,7 +98,13 @@ def cmd_serve(args: argparse.Namespace) -> None:
         if loras:
             raise SystemExit("--no-lora 与 --lora 不能同时使用")
     else:
-        cmd += ["--enable-lora", "--max-lora-rank", str(args.max_lora_rank)]
+        from .config import round_lora_rank
+
+        # vLLM 只接受 1/8/16/32/64/128/256/320/512，其他值（如 96）向上取整
+        max_lora_rank = round_lora_rank(args.max_lora_rank)
+        if max_lora_rank != args.max_lora_rank:
+            print(f"[localtrio] --max-lora-rank {args.max_lora_rank} 不是 vLLM 接受的取值，按 {max_lora_rank} 处理", flush=True)
+        cmd += ["--enable-lora", "--max-lora-rank", str(max_lora_rank)]
         if loras:
             cmd += ["--lora-modules", *loras]
     extra = list(args.extra)
@@ -171,7 +177,7 @@ def main() -> None:
     p.add_argument("--tp", type=int, default=1)
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--max-model-len", type=int, default=32768, help="默认 32768；传 0 使用模型自带上限")
-    p.add_argument("--max-lora-rank", type=int, default=64)
+    p.add_argument("--max-lora-rank", type=int, default=64, help="不小于训练用的 rank；非 vLLM 取值（如 96）自动向上取整")
     p.add_argument("--no-lora", action="store_true", help="不启用 LoRA（只服务基模，例如大模型裁判），省下 LoRA 预留显存")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     p.set_defaults(fn=cmd_serve, extra=[])

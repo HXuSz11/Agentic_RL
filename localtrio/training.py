@@ -142,7 +142,7 @@ class TrainingClient:
             # 提前报错：否则要训练到第一次采样时才会被 vLLM 拒绝
             raise ValidationError(
                 f"LoRA rank {rank} 超过采样引擎的 max_lora_rank={engine.max_lora_rank}；"
-                "调小 rank，或在配置的 models 下调大 max_lora_rank",
+                "调小 rank，或在配置的 models 下调大 max_lora_rank（vLLM 取值为 8/16/32/64/128，其他值自动向上取整）",
                 code="validation.lora_rank",
             )
         _ensure_drop_thread()

@@ -9,7 +9,7 @@ description: 安装 PyTorch、transformers、PEFT 与 vLLM，检查 GPU 布局�
 
 ## 准备
 
-- Linux x86_64，NVIDIA 驱动足够新（PyPI 上的 PyTorch / vLLM 默认 wheel 基于较新的 CUDA；装完后用下面的命令确认 `torch.cuda.is_available()` 为 `True`）。
+- Linux x86_64，NVIDIA 驱动 ≥ 580：仓库的 `uv.lock` 锁定了 vLLM 0.33.0 与它要求的 torch 2.14.0，后者在 PyPI 上的 wheel 基于 CUDA 13.0。装完后用下面的命令确认 `torch.cuda.is_available()` 为 `True`。
 - Python 3.12 或 3.13，[uv](https://docs.astral.sh/uv/)。
 - 磁盘：模型（4B 约 10GB，27B 约 55GB）+ 每个 run 的 checkpoint，建议预留 100GB 以上 SSD。
 - 网络：能访问 HuggingFace（或配置镜像 / ModelScope）以及各章节用到的数据集。
@@ -23,7 +23,7 @@ uv sync                      # torch、transformers、peft、vllm 与实验依�
 uv sync --extra kernels      # 推荐：Qwen3.5 线性注意力的训练 kernel（flash-linear-attention、causal-conv1d）
 ```
 
-`causal-conv1d` 没有匹配的预编译 wheel 时会从源码编译，需要本机有 CUDA 工具链；编译失败可以先跳过这一步，训练会退回较慢的纯 PyTorch 实现。ALFWorld / TEMPO / AgentOPSD 还需要 alfworld 依赖：`uv sync --extra kernels --extra alfworld`（kernels 编译失败时用 `uv sync --extra alfworld`）。
+`uv sync` 按仓库里的 `uv.lock` 安装，各包版本与作者核对时一致（例如 swanlab 0.10.x：更早的 0.6.x 不接受各章默认的 `--swanlab-mode online`）。`causal-conv1d` 没有匹配的预编译 wheel 时会从源码编译，需要本机有与 torch 一致的 CUDA 13.x 工具链（`nvcc`）；编译失败可以先跳过这一步，训练会退回较慢的纯 PyTorch 实现。ALFWorld / TEMPO / AgentOPSD 还需要 alfworld 依赖：`uv sync --extra kernels --extra alfworld`（kernels 编译失败时用 `uv sync --extra alfworld`）。
 
 ::: warning uv sync 会移除没写上的 extra
 `uv sync` 默认精确同步：这次命令没有指定的 extra 会被卸载。比如装过 kernels 之后再单独执行 `uv sync --extra dev` 或 `uv sync --extra alfworld`，flash-linear-attention / causal-conv1d 会被删掉，训练悄悄退回纯 PyTorch 实现。所以每次都把要用的 extras 写全（如 `uv sync --extra kernels --extra dev`），或者加 `--inexact` 只装不删。`uv run` 不会移除已经装好的包。

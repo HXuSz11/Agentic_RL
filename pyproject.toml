@@ -28,7 +28,8 @@ dependencies = [
     "pydantic>=2.8",
     "python-dotenv>=1.1",
     "pyyaml>=6",
-    "swanlab>=0.6",
+    # swanlab 0.6.x 不接受 mode="online"（各章默认值）；不加下限时 uv 会为了 vLLM 的 protobuf 7 退回 0.6.4
+    "swanlab>=0.9.2,<0.11",
     "tqdm>=4.66",
 ]
 
@@ -50,6 +51,11 @@ localtrio = "localtrio.__main__:main"
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv]
+# vLLM 只发布 Linux 轮子；只为 Linux x86_64 求解，避免 s390x 等平台上 vLLM（protobuf==7.x）
+# 与 swanlab（protobuf<7）冲突导致整个 lock 失败
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
 [tool.setuptools.packages.find]
 include = ["localtrio*"]
