@@ -142,10 +142,21 @@ class WorkerHandle:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 continue
-        try:  # vLLM 派生的子进程也在同一进程组
-            os.killpg(self.proc.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
+        # 组长退出后，vLLM 的 EngineCore / TP worker 等同组子进程可能还卡在 CUDA 调用里：
+        # 先 SIGTERM 整个进程组，等待片刻，仍有存活的就 SIGKILL，避免孤儿进程占着显存
+        pgid = self.proc.pid
+        for sig, wait in ((signal.SIGTERM, 5.0), (signal.SIGKILL, 2.0)):
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                return
+            end = time.time() + wait
+            while time.time() < end:
+                try:
+                    os.killpg(pgid, 0)
+                except (ProcessLookupError, PermissionError):
+                    return
+                time.sleep(0.1)
 
     def _abort_start(self, reason: str) -> None:
         """启动失败：让所有等待中的调用报错，并杀掉子进程组，释放它可能占着的显存。"""

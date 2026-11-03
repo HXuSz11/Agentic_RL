@@ -43,9 +43,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 import localtrio as trio
 from tqdm import tqdm
-from transformers import AutoImageProcessor, AutoTokenizer
 
-from protocol import BASE_MODEL, MODEL_REVISION
+
+from protocol import BASE_MODEL, MODEL_REVISION, load_processing
 from rollout import rollout
 
 
@@ -134,15 +134,7 @@ async def main(args):
                 ),
             })
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.base_model,
-        revision=args.model_revision,
-    )
-    processor = AutoImageProcessor.from_pretrained(
-        args.base_model,
-        revision=args.model_revision,
-        backend="pil",
-    )
+    tokenizer, processor = load_processing(args.base_model, args.model_revision)
 
     # 2. model_path 留空使用 Base；传入时加载对应 sampler 权重。
     service = trio.ServiceClient()

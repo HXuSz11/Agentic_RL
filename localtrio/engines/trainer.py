@@ -562,7 +562,9 @@ class TrainerEngine:
     def _adapter_state(self, run: Run, dtype: torch.dtype | None) -> dict[str, torch.Tensor]:
         from peft import get_peft_model_state_dict
 
-        state = get_peft_model_state_dict(self.model, adapter_name=run.adapter)
+        # save_embedding_layers=False：lm_head 挂 LoRA（allow_unembed）时只保存 LoRA 权重，
+        # 不把整份基模输出层（4B 模型约 1.2GB）随每次保存写一遍
+        state = get_peft_model_state_dict(self.model, adapter_name=run.adapter, save_embedding_layers=False)
         out = {}
         for key, value in state.items():
             value = value.detach().cpu().contiguous()

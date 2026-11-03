@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import queue
 import re
 import shutil
+import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -58,13 +60,36 @@ def _to_output(raw: dict[str, Any], extra_metrics: dict[str, float] | None = Non
     return ForwardBackwardOutput(loss_fn_outputs=outputs, metrics=metrics)
 
 
+_DROP_QUEUE: "queue.SimpleQueue[tuple[Any, str]]" = queue.SimpleQueue()
+_DROP_THREAD: threading.Thread | None = None
+_DROP_THREAD_LOCK = threading.Lock()
+
+
+def _drain_drops() -> None:
+    while True:
+        worker, run_id = _DROP_QUEUE.get()
+        try:
+            if worker.alive:
+                worker.call("drop_run", run_id=run_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _ensure_drop_thread() -> None:
+    global _DROP_THREAD
+    with _DROP_THREAD_LOCK:
+        if _DROP_THREAD is None or not _DROP_THREAD.is_alive():
+            _DROP_THREAD = threading.Thread(target=_drain_drops, name="localtrio-drop-run", daemon=True)
+            _DROP_THREAD.start()
+
+
 def _drop_run(worker: Any, run_id: str) -> None:
-    """TrainingClient 被回收时调用（不能引用 client 本身）。"""
-    try:
-        if worker.alive:
-            worker.call("drop_run", run_id=run_id)
-    except Exception:  # noqa: BLE001
-        pass
+    """TrainingClient 被回收时调用（不能引用 client 本身）。
+
+    finalizer 可能在任意位置被 GC 触发（甚至当前线程正持有 RPC 的锁时），所以这里
+    只往可重入安全的 SimpleQueue 里放一条记录，由后台线程真正发出 drop_run。
+    """
+    _DROP_QUEUE.put((worker, run_id))
 
 
 def _invoke_custom_loss(loss_fn: Callable, data: list[Datum], logprobs: list[Any], config: dict[str, object] | None) -> Any:
@@ -97,6 +122,15 @@ class TrainingClient:
         runtime: Runtime | None = None,
     ) -> None:
         self._runtime = runtime or Runtime.get()
+        engine = self._runtime.cfg.engine_for(base_model)
+        if engine.enable_lora and rank > int(engine.max_lora_rank):
+            # 提前报错：否则要训练到第一次采样时才会被 vLLM 拒绝
+            raise ValidationError(
+                f"LoRA rank {rank} 超过采样引擎的 max_lora_rank={engine.max_lora_rank}；"
+                "调小 rank，或在配置的 models 下调大 max_lora_rank",
+                code="validation.lora_rank",
+            )
+        _ensure_drop_thread()
         self.model_id = base_model
         self.model_alias = base_model
         self.base_model = base_model
@@ -358,9 +392,14 @@ class TrainingClient:
             self._worker.call("drop_run", run_id=self.training_run_cuid).result(timeout=60)
         except Exception:  # noqa: BLE001
             pass
-        for path, _ in self._temp_weights:
-            shutil.rmtree(path, ignore_errors=True)
-        self._temp_weights = []
+        # 仍被 SamplingClient 引用的临时权重保留（close 之后还可能用它做最终评测）
+        alive = []
+        for path, ref in self._temp_weights:
+            if ref() is None:
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                alive.append((path, ref))
+        self._temp_weights = alive
 
     async def close_async(self) -> None:
         await asyncio.to_thread(self.close)

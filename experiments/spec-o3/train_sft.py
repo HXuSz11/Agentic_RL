@@ -38,9 +38,9 @@ import random
 
 import localtrio as trio
 import swanlab
-from transformers import AutoImageProcessor, AutoTokenizer
 
-from protocol import BASE_MODEL, build_sft_datum
+
+from protocol import BASE_MODEL, build_sft_datum, load_processing
 
 
 def loss_totals(result, data):
@@ -128,15 +128,7 @@ async def main(args):
     ]
 
     # 2. 文本和图像处理器使用同一个基模、同一个 HF 文件版本。
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.base_model,
-        revision=args.model_revision,
-    )
-    processor = AutoImageProcessor.from_pretrained(
-        args.base_model,
-        revision=args.model_revision,
-        backend="pil",
-    )
+    tokenizer, processor = load_processing(args.base_model, args.model_revision)
 
     # 3. 初始化实验记录和本地 LoRA 训练任务（trainer 子进程在 GPU0 上加载基模）。
     config = {

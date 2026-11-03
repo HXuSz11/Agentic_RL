@@ -51,6 +51,24 @@ def render_messages(messages, tokenizer, generation=False):
     )
 
 
+def load_processing(base_model, revision):
+    """加载 tokenizer 与图像处理器。
+
+    revision 为 main（训练脚本默认）时，直接读取 localtrio 引擎实际使用的模型目录
+    （trio.get_model_dir，遵守 model_paths / ModelScope / 本地缓存），保证预计算的
+    expected_tokens 与训练端、采样端一致；指定了其他 revision 时按原版从 HF Hub 读取。
+    """
+    from transformers import AutoImageProcessor, AutoTokenizer
+
+    if revision in (None, "main"):
+        source = trio.get_model_dir(base_model)
+        return AutoTokenizer.from_pretrained(source), AutoImageProcessor.from_pretrained(source, backend="pil")
+    return (
+        AutoTokenizer.from_pretrained(base_model, revision=revision),
+        AutoImageProcessor.from_pretrained(base_model, revision=revision, backend="pil"),
+    )
+
+
 def image_chunk(path, image_processor):
     """把一张图编码为 PNG，并用匹配的处理器计算视觉 token 数。"""
     # 原图中透明背景合成到白色；传入 processor 和 localtrio 引擎（训练端 / vLLM）的是同一张 RGB 图。

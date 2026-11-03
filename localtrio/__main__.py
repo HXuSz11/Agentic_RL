@@ -104,7 +104,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     extra = list(args.extra)
     dp = _flag_value(extra, ("--data-parallel-size", "-dp"))
     api_servers = _flag_value(extra, ("--api-server-count", "-asc"))
-    if dp and int(dp) > 1 and api_servers is None:
+    if dp and int(dp) > 1 and api_servers is None and "--headless" not in extra:
         # vLLM 默认按 data_parallel_size 起多个 API server，而多 API server 不能动态加载 LoRA
         extra += ["--api-server-count", "1"]
         api_servers = "1"

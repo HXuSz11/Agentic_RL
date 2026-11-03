@@ -230,7 +230,8 @@ def main(args: argparse.Namespace) -> None:
     checkpoint = json.loads(args.resume.read_text(encoding="utf-8")) if args.resume else None
     start_step = checkpoint["step"] if checkpoint else 0
 
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+    # 与 localtrio 引擎读取同一个模型目录（遵守 model_paths / ModelScope / 本地缓存）
+    tokenizer = AutoTokenizer.from_pretrained(trio.get_model_dir(args.base_model))
     service = trio.ServiceClient()
     if checkpoint:
         # state 同时包含 LoRA 权重和 AdamW 状态。

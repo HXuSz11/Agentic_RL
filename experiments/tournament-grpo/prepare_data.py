@@ -88,7 +88,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """下载原始数据，生成 train/val JSONL 和 Deep Research Bench 评测文件。"""
     args = parse_args()
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+    # 与 localtrio 引擎读取同一个模型目录（遵守 model_paths / ModelScope / 本地缓存）
+    import localtrio as trio
+
+    tokenizer = AutoTokenizer.from_pretrained(trio.get_model_dir(args.base_model))
     for split, remote in SPLIT_FILES.items():
         raw_path = download(remote, args.output_dir / "raw" / Path(remote).name)
         counts, dropped = prepare_split(raw_path, args.output_dir / f"{split}.jsonl", tokenizer)

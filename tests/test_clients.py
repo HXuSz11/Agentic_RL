@@ -263,3 +263,8 @@ def test_temp_weights_kept_while_sampler_alive(trio, text_model):
     tc.save_weights_and_get_sampling_client()
     assert not os.path.isdir(oldest_unreferenced)
     assert os.path.isdir(first_dir)
+
+
+def test_rank_above_sampler_limit_fails_early(trio, text_model):
+    with pytest.raises(trio.ValidationError, match="max_lora_rank"):
+        trio.ServiceClient().create_lora_training_client(base_model=text_model, rank=96)

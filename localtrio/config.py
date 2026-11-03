@@ -7,16 +7,18 @@
 3. ``trio.configure(...)`` 传入的关键字参数；
 4. 少量环境变量（``LOCALTRIO_HOME``、``LOCALTRIO_SAMPLER_BACKEND`` 等）。
 
-一份最小 YAML 示例::
+一份最小 YAML 示例（不同基模的采样引擎不能共用 GPU）::
 
     trainer:
       gpus: [0]
     models:
       default:            # 训练基模的采样引擎
-        gpus: [1, 2, 3]   # 每张卡一个 vLLM 副本（data parallel）
-      Qwen/Qwen3.6-27B:   # OPD 教师
+        gpus: [1]         # 每张卡一个 vLLM 副本（data parallel）
+      Qwen/Qwen3.6-27B:   # OPD 教师：单独的两张卡
         gpus: [2, 3]
         tensor_parallel_size: 2
+
+``models.default.gpus`` 不写时，自动取 trainer 和其他显式引擎之外的全部 GPU。
 """
 
 from __future__ import annotations
@@ -295,8 +297,13 @@ def load_config() -> LocalConfig:
             engine.gpus = []
         return cfg
     if default.gpus is None:
-        # 默认布局：trainer 之外的卡全部给训练基模的采样引擎；只有一张卡时与 trainer 共用。
-        others = [g for g in cfg.gpus if g not in cfg.trainer.gpus]
+        # 默认布局：trainer 和其他显式配置的引擎（如 OPD 教师）之外的卡，全部给训练基模的
+        # 采样引擎；没有剩余的卡时与 trainer 共用。
+        reserved = set(cfg.trainer.gpus)
+        for name, engine in cfg.models.items():
+            if name != "default" and engine.gpus:
+                reserved.update(engine.gpus)
+        others = [g for g in cfg.gpus if g not in reserved]
         default.gpus = others or list(cfg.trainer.gpus)
         if not others:
             default.gpu_memory_utilization = min(default.gpu_memory_utilization, 0.4)

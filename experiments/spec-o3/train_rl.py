@@ -31,9 +31,9 @@ import numpy as np
 import localtrio as trio
 import swanlab
 from tqdm import tqdm
-from transformers import AutoImageProcessor, AutoTokenizer
 
-from protocol import build_rl_datum, encode_messages
+
+from protocol import build_rl_datum, encode_messages, load_processing
 from rollout import rollout
 
 
@@ -179,15 +179,7 @@ async def main(args):
     else:
         client = await service.create_training_client_from_state_async(args.state_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        client.model_id,
-        revision=args.model_revision,
-    )
-    processor = AutoImageProcessor.from_pretrained(
-        client.model_id,
-        revision=args.model_revision,
-        backend="pil",
-    )
+    tokenizer, processor = load_processing(client.model_id, args.model_revision)
     optimizer = trio.AdamParams(learning_rate=args.learning_rate)
     swanlab.init(
         project=args.project_name,
