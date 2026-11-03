@@ -25,7 +25,7 @@ const chapter = computed(() => chapters.value.find(c => c.id === frontmatter.val
     <div class="article-actions">
       <a v-if="chapter.start && !frontmatter.isRun" class="x-button primary small" :href="withBase(`${chapterLink(chapter, locale)}run.html`)"><Icon name="flask" :size="16" /> 快速启动</a>
       <a v-if="frontmatter.isRun" class="x-button ghost small" :href="withBase(chapterLink(chapter, locale))"><Icon name="book" :size="16" /> 阅读算法拆解</a>
-      <a class="x-button ghost small" :href="`${repoUrl}/tree/${repoRef}/${chapter.source.slice(0, chapter.source.lastIndexOf('/'))}`" target="_blank" rel="noreferrer"><Icon name="code" :size="16" /> 查看代码 <Icon name="diagonal" :size="14" /></a>
+      <a class="x-button ghost small" :href="`${repoUrl}/tree/${repoRef}/${chapter.source.slice(0, chapter.source.lastIndexOf('/'))}`" target="_blank" rel="noreferrer"><Icon name="code" :size="16" /> {{ chapter.code === false ? '查看源文件' : '查看代码' }} <Icon name="diagonal" :size="14" /></a>
     </div>
   </header>
   <div v-else-if="frontmatter.modified" class="guide-intro"><MarkdownActions /><p class="guide-meta"><a :href="frontmatter.authorUrl" rel="author">{{ frontmatter.author }}</a> · 更新于 <time :datetime="frontmatter.modified">{{ frontmatter.modified }}</time></p></div>

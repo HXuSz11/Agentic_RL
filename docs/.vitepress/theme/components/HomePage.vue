@@ -1,6 +1,6 @@
 <script setup>
 import { withBase } from 'vitepress'
-import { repoUrl, chapterLink } from '../../../chapters.mjs'
+import { repoUrl, upstreamUrl, chapterLink } from '../../../chapters.mjs'
 import { computed, ref } from 'vue'
 import { useLocale } from '../composables.js'
 import Icon from './Icon.vue'
@@ -13,24 +13,29 @@ const groupLabel = (id) => groups.value.find(g => g.id === id)?.label
 const groupCount = (id) => chapters.value.filter(c => c.group === id).length
 
 const commands = [
-  'git clone https://github.com/HXuSz11/Agentic_RL.git && cd Agentic_RL',
-  'uv sync --extra kernels',
+  'git clone https://github.com/HXuSz11/Agentic_RL.git',
+  'cd Agentic_RL',
+  'uv sync',
   'uv run python scripts/gpu_smoke_test.py',
 ]
 const copied = ref(false)
+const failed = ref(false)
 async function copyCommands() {
   try {
     await navigator.clipboard.writeText(commands.join('\n'))
     copied.value = true
     setTimeout(() => (copied.value = false), 1800)
-  } catch {}
+  } catch {
+    failed.value = true
+    setTimeout(() => (failed.value = false), 1800)
+  }
 }
 
 const steps = [
   { icon: 'layers', where: 'GPU 1–3 · vLLM', title: '采样', text: '每个 prompt 生成一组回答，同时返回逐 token 的 logprob。' },
   { icon: 'spark', where: '训练脚本主进程', title: '打分', text: '规则奖励、裁判模型或环境反馈给出 reward，再算组内优势。' },
   { icon: 'chip', where: 'GPU 0 · transformers + PEFT', title: '更新', text: 'forward_backward 与 optim_step 更新 LoRA，接口与 PyTRIO 同名同参。' },
-  { icon: 'route', where: 'save_weights_for_sampler', title: '同步', text: '新 LoRA 写到本地，采样副本热加载，下一步就用上新策略。' },
+  { icon: 'route', where: 'save_weights_and_get_sampling_client', title: '同步', text: '新 LoRA 写到本地，采样副本热加载，下一步就用上新策略。' },
 ]
 const guides = [
   { href: '/guide/localtrio.html', icon: 'code', title: 'localtrio：本地版 Train API', text: 'forward_backward、optim_step、sample 怎样在本地实现，loss 语义和 PyTRIO 有哪些差异。' },
@@ -47,7 +52,7 @@ const guides = [
         <div class="hero-copy">
           <p class="hero-pill"><span class="pulse-dot" aria-hidden="true" />本地 GPU 版 · 训练与采样都在自己的卡上</p>
           <h1>把 {{ chapters.length }} 个 Agentic RL 实验<br>跑在自己的 <span class="hero-gradient">4 张 A6000</span> 上</h1>
-          <p class="hero-lead">原教程依赖 PyTRIO 云端训练服务。这里用 <strong>localtrio</strong> 在本地复刻同名同参的 Train API：transformers + PEFT 训练 LoRA，vLLM 负责采样，每一步自动把新权重交给采样端。</p>
+          <p class="hero-lead"><a class="hero-credit" :href="upstreamUrl" target="_blank" rel="noreferrer">Datawhale 原教程</a>依赖 PyTRIO 云端训练服务。这里用 <strong>localtrio</strong> 在本地复刻同名同参的 Train API：transformers + PEFT 训练 LoRA，vLLM 负责采样，每一步自动把新权重交给采样端。</p>
           <div class="hero-actions">
             <a class="x-button primary" :href="withBase(path('/guide/quickstart.html'))">开始第一个实验 <Icon name="arrow" :size="17" /></a>
             <a class="x-button ghost" :href="withBase(path('/experiments/'))">浏览全部实验 <Icon name="book" :size="17" /></a>
@@ -56,7 +61,8 @@ const guides = [
             <div class="terminal-bar">
               <span class="terminal-lights" aria-hidden="true"><i /><i /><i /></span>
               <span>快速开始</span>
-              <button type="button" class="terminal-copy" @click="copyCommands"><Icon :name="copied ? 'check' : 'copy'" :size="14" />{{ copied ? '已复制' : '复制' }}</button>
+              <button type="button" class="terminal-copy" aria-label="复制快速开始命令" @click="copyCommands"><Icon :name="copied ? 'check' : 'copy'" :size="14" />{{ copied ? '已复制' : failed ? '复制失败' : '复制' }}</button>
+              <span class="sr-only" role="status">{{ copied ? '命令已复制到剪贴板' : failed ? '复制失败，请手动选择命令' : '' }}</span>
             </div>
             <pre><code><span v-for="cmd in commands" :key="cmd" class="terminal-line"><span class="prompt" aria-hidden="true">$</span>{{ cmd }}</span></code></pre>
           </div>

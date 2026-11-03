@@ -33,7 +33,7 @@ const samplers = [1, 2, 3]
     </ol>
     <div class="rig-sync">
       <span class="rig-wire" aria-hidden="true"><i /></span>
-      <p><code>save_weights_for_sampler()</code> 每步把新 LoRA 交给三个副本热加载</p>
+      <p><code>save_weights_and_<wbr>get_sampling_client()</code> 每步把新 LoRA 交给三个副本热加载</p>
     </div>
   </figure>
 </template>

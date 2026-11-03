@@ -1,7 +1,7 @@
 [project]
 name = "agentic-rl-local"
 version = "0.1.0"
-description = "Agentic RL Lab 的本地 GPU 版本：用 localtrio（transformers + PEFT + vLLM）替代 PyTRIO 云端训练"
+description = "Agentic RL 本地实战：用 localtrio（transformers + PEFT + vLLM）替代 PyTRIO 云端训练"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }

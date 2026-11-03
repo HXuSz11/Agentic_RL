@@ -1,5 +1,5 @@
 ---
-title: 关于 Agentic RL 本地实战
+title: 关于本地版
 description: Datawhale 开源 Agentic RL 教程的本地 GPU 改写版：同样的 16 篇算法笔记，代码通过 localtrio 在自己的 4×A6000 上训练与采样。
 ---
 

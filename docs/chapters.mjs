@@ -8,7 +8,7 @@ export const groups = [
 ]
 
 export const chapters = [
-  { id: 'loss-functions', number: '01', title: 'Loss Functions', subtitle: '从直觉理解强化学习损失', group: 'foundations', source: 'experiments/loss-functions/readme.md', description: '从 importance sampling 到 PPO、CISPO，看清每一次策略更新到底在优化什么，以及它们在 localtrio 训练端怎样逐 token 计算。', tags: ['入门', '目标函数'] },
+  { id: 'loss-functions', number: '01', title: 'Loss Functions', subtitle: '从直觉理解强化学习损失', group: 'foundations', source: 'experiments/loss-functions/readme.md', code: false, description: '从 importance sampling 到 PPO、CISPO，看清每一次策略更新到底在优化什么，以及它们在 localtrio 训练端怎样逐 token 计算。', tags: ['入门', '目标函数'] },
   { id: 'grpo', number: '02', title: 'GRPO', subtitle: '从组内比较开始', group: 'foundations', source: 'experiments/grpo/readme.md', start: 'experiments/grpo/start.md', description: '在 GSM8K 上走通采样、奖励与更新：GPU0 训练、GPU1-3 用 vLLM 组采样，亲手比较三种 loss 的训练行为。', tags: ['GSM8K', '组相对优势'] },
   { id: 'vision-grpo', number: '03', title: 'Vision GRPO', subtitle: '让强化学习看见图片', group: 'frontiers', source: 'experiments/vision-grpo/readme.md', start: 'experiments/vision-grpo/start.md', description: '在 GeoQA 上接入图像输入，把 Qwen3.5 的图文推理、vLLM 多模态采样与可验证奖励串起来。', tags: ['视觉语言模型', 'GeoQA'] },
   { id: 'pytrio-jev', number: '04', title: 'Jev 决策模型', subtitle: '训练自己的分类决策模型', group: 'frontiers', source: 'experiments/pytrio-jev/readme.md', start: 'experiments/pytrio-jev/start.md', description: '用 2160 条数据在本地 LoRA 微调 Qwen3.5-4B，走通 marker 监督、受限 softmax 推理、温度校准与五项基准评测。', tags: ['分类决策', '概率校准'] },

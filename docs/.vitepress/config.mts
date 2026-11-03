@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 import { slug } from 'github-slugger'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { localizedChapters, repoUrl, chapterLink } from '../chapters.mjs'
+import { localizedChapters, repoUrl, upstreamUrl, chapterLink } from '../chapters.mjs'
 import { siteUrl, siteBase, siteName, siteDescription } from '../site.mjs'
 import { addSeo, pageDates } from './seo.mjs'
 import { imageSize, imageHints } from './images.mjs'
@@ -60,8 +60,8 @@ function navigation() {
       {
         text: '实验阅读顺序', collapsed: false,
         items: chapters.map(c => ({
-          text: `${c.number}  ${c.title}`, link: chapterLink(c),
-          ...(c.start ? { collapsed: true, items: [{ text: '快速启动', link: `${chapterLink(c)}run.html` }] } : {}),
+          text: `${c.number} ${c.title}`, link: chapterLink(c),
+          ...(c.start ? { collapsed: true, items: [{ text: '快速启动', docFooterText: `${c.number} ${c.title} · 快速启动`, link: `${chapterLink(c)}run.html` }] } : {}),
         })),
       },
     ],
@@ -81,7 +81,7 @@ function navigation() {
       text: '在 GitHub 上编辑此页',
     },
     notFound: { title: '这页笔记还没找到', quote: '换一个入口，继续探索强化学习。', linkLabel: '返回首页', linkText: '返回首页' },
-    footer: { message: '内容改编自 Datawhale 开源教程（Apache-2.0）· 训练与采样：localtrio + transformers + PEFT + vLLM', copyright: '在自己的显卡上，把论文跑成实验。' },
+    footer: { message: `内容改编自 Datawhale <a href="${upstreamUrl}" target="_blank" rel="noreferrer">开源 Agentic RL 教程</a>（Apache-2.0，原作者 KMnO4-zx 等）· 训练与采样：localtrio + transformers + PEFT + vLLM`, copyright: '在自己的显卡上，把论文跑成实验。' },
   }
 }
 
@@ -91,7 +91,8 @@ export default defineConfig({
   lang: 'zh-CN', base: siteBase, srcDir: './content', cleanUrls: false, lastUpdated: false,
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${siteBase}favicon.svg` }],
-    ['meta', { name: 'theme-color', content: '#ffffff' }],
+    ['meta', { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#ffffff' }],
+    ['meta', { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#0d1116' }],
   ],
   transformPageData: addSeo,
   buildEnd: (siteConfig) => copyRawMarkdown(siteConfig.srcDir, siteConfig.outDir),
@@ -117,8 +118,17 @@ export default defineConfig({
   },
   markdown: {
     math: true, image: { lazyLoading: true }, anchor: { slugify: slug },
-    theme: { light: 'github-light-high-contrast', dark: 'github-dark' },
+    theme: { light: 'github-light-high-contrast', dark: 'github-dark-default' },
+    codeCopyButtonTitle: '复制代码',
     config(md) {
+      // 标题锚点的读屏文案改成中文（VitePress 默认是 Permalink to "…"）
+      md.core.ruler.push('zh_anchor_label', (state) => {
+        for (const token of state.tokens) for (const child of token.children || []) {
+          if (child.type !== 'link_open' || child.attrGet('class') !== 'header-anchor') continue
+          const label = child.attrGet('aria-label')
+          if (label) child.attrSet('aria-label', label.replace(/^Permalink to "([\s\S]*)"$/, '跳转到「$1」'))
+        }
+      })
       const renderImage = md.renderer.rules.image!
       md.renderer.rules.image = (tokens, idx, options, env, self) => {
         const size = imageSize(tokens[idx].attrGet('src'))

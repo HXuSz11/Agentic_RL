@@ -28,7 +28,7 @@ export function addSeo(page) {
   }
   const en = false
   const url = pageUrl(path)
-  const title = page.title + ' | ' + siteName
+  const title = page.frontmatter.titleTemplate === ':title' ? page.title : page.title + ' | ' + siteName
   const description = page.description
   const image = siteUrl + 'social-card.png'
   const { published, modified } = page.frontmatter.sourceDates || sourceDates('docs/content/' + path)
@@ -57,7 +57,7 @@ export function addSeo(page) {
   page.frontmatter.head = [
     ...(page.frontmatter.head || []),
     ['link', { rel: 'canonical', href: url }],
-    ...Object.entries({ 'og:type': isArticle ? 'article' : 'website', 'og:site_name': siteName, 'og:title': title, 'og:description': description, 'og:url': url, 'og:locale': 'zh_CN', 'og:image': image, 'og:image:width': '1200', 'og:image:height': '630', 'og:image:alt': siteName + '：在 4×A6000 上跑通 16 个 Agentic RL 实验' }).map(([property, content]) => ['meta', { property, content }]),
+    ...Object.entries({ 'og:type': isArticle ? 'article' : 'website', 'og:site_name': siteName, 'og:title': title, 'og:description': description, 'og:url': url, 'og:locale': 'zh_CN', 'og:image': image, 'og:image:width': '1200', 'og:image:height': '630', 'og:image:alt': siteName + '：把 16 个 Agentic RL 实验跑在自己的 4 张 A6000 上' }).map(([property, content]) => ['meta', { property, content }]),
     ...Object.entries({ 'twitter:card': 'summary_large_image', 'twitter:title': title, 'twitter:description': description, 'twitter:image': image }).map(([name, content]) => ['meta', { name, content }]),
     ['script', { type: 'application/ld+json' }, json(schema)],
     ...(isArticle ? [['script', { type: 'application/ld+json' }, json(breadcrumbs)]] : []),

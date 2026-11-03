@@ -7,8 +7,9 @@ import { useLocale } from '../composables.js'
 const { locale, chapters, groups, path } = useLocale()
 const selected = ref('all')
 const query = ref('')
-const filtered = computed(() => chapters.value.filter(c => (selected.value === 'all' || c.group === selected.value) && `${c.title} ${c.subtitle} ${c.description} ${c.tags.join(' ')}`.toLowerCase().includes(query.value.toLowerCase().trim())))
 const groupLabel = (id) => groups.value.find(g => g.id === id)?.label
+const haystack = (c) => `${c.number} ${c.title} ${c.subtitle} ${c.description} ${c.tags.join(' ')} ${groupLabel(c.group)}`.toLowerCase()
+const filtered = computed(() => chapters.value.filter(c => (selected.value === 'all' || c.group === selected.value) && haystack(c).includes(query.value.toLowerCase().trim())))
 const groupNote = (id) => groups.value.find(g => g.id === id)?.note
 function readTopic() { const topic = new URLSearchParams(location.search).get('topic'); selected.value = groups.value.some(g => g.id === topic) ? topic : 'all' }
 function selectTopic(id) { selected.value = id; const url = new URL(location.href); id === 'all' ? url.searchParams.delete('topic') : url.searchParams.set('topic', id); history.replaceState(null, '', url) }
@@ -20,14 +21,14 @@ onUnmounted(() => window.removeEventListener('popstate', readTopic))
   <main class="catalog x-width">
     <header class="catalog-header">
       <h1>实验手册</h1>
-      <p>{{ chapters.length }} 篇算法拆解与本地复现记录：从一个训练循环出发，走到会搜索、会调用工具、会看图的 Agent。每篇都写明了 GPU 布局和运行命令。</p>
+      <p>{{ chapters.length }} 篇算法拆解与本地运行说明：从一个训练循环出发，走到会搜索、会调用工具、会看图的 Agent。除入门的 Loss Functions 外，每篇都写明了 GPU 布局和运行命令。</p>
     </header>
     <div class="catalog-controls">
       <div class="group-tabs" role="group" aria-label="按研究方向筛选">
         <button type="button" :aria-pressed="selected === 'all'" :class="{ active: selected === 'all' }" @click="selectTopic('all')">全部<span>{{ chapters.length }}</span></button>
         <button v-for="group in groups" :key="group.id" type="button" :class="['g-' + group.id, { active: selected === group.id }]" :aria-pressed="selected === group.id" @click="selectTopic(group.id)"><i class="g-dot" aria-hidden="true" />{{ group.label }}<span>{{ chapters.filter(c => c.group === group.id).length }}</span></button>
       </div>
-      <label class="catalog-search"><Icon name="search" :size="17" /><input v-model="query" aria-label="筛选实验" placeholder="搜索算法、任务或关键词…"></label>
+      <label class="catalog-search"><Icon name="search" :size="17" /><input v-model="query" type="search" enterkeyhint="search" aria-label="筛选实验" placeholder="搜索算法、任务或关键词…"></label>
     </div>
     <p v-if="selected !== 'all'" class="catalog-note">{{ groupLabel(selected) }}：{{ groupNote(selected) }}</p>
     <div class="catalog-count" aria-live="polite">共 {{ filtered.length }} 个实验</div>
