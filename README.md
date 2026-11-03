@@ -34,6 +34,7 @@ cd Agentic_RL
 uv sync                      # torch / transformers / peft / vllm / 实验依赖
 uv sync --extra kernels      # 推荐：Qwen3.5 线性注意力训练 kernel
 uv run python -m localtrio info
+uv run python scripts/gpu_smoke_test.py   # 第一次在 GPU 上运行前的自检（vLLM 采样 / 训练 logprob 一致性 / LoRA 热加载）
 uv run python experiments/grpo/01-demo-sync.py --steps 2 --batch-size 4 --group-size 4 \
     --max-tokens 512 --swanlab-mode disabled
 ```

@@ -57,6 +57,15 @@ uv run swanlab login
 
 不想记录时，给训练脚本加 `--swanlab-mode disabled`（大多数章节支持这个参数，以各章快速启动为准）。
 
+## GPU 自检（第一次在新机器上运行前）
+
+```bash
+uv run python scripts/gpu_smoke_test.py                 # 默认 Qwen/Qwen3.5-4B，几分钟
+uv run python scripts/gpu_smoke_test.py --image         # 同时检查图文输入
+```
+
+它会依次检查：vLLM 组采样是否返回全部序列、采样端 logprob 是否与训练端一致（on-policy ratio≈1）、训练一步后新 LoRA 是否被采样端热加载、`compute_logprobs` / top-k、`save_state` 往返。全部 `PASS` 再开始正式实验；某项 `FAIL` 时把输出和 `~/.cache/localtrio/logs/` 里的引擎日志一起贴到 Issue。
+
 ## 运行第一个 GRPO
 
 ```bash
