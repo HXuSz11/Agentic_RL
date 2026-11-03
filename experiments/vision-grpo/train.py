@@ -1,7 +1,8 @@
 """在本地 GPU 上（localtrio）用 GeoQA 运行多模态 GRPO。
 
 训练（LoRA，视觉塔不加 LoRA）跑在 trainer 子进程，图文采样跑在 vLLM 子进程；
-默认 GPU0 训练、GPU1-3 采样，其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定。
+默认 GPU0 训练、其余每张卡一个采样副本（只有 1 张卡时共用 GPU0），
+其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定（如 configs/1gpu.yaml、configs/2gpu.yaml）。
 
 准备数据（仓库根目录）：
 uv run python experiments/vision-grpo/download-dataset.py
@@ -384,7 +385,7 @@ async def main(args: argparse.Namespace) -> None:
             degenerate_groups = 0
 
             # 一个 step 内的不同题目使用同一版 sampler 并发 rollout；
-            # localtrio 会把这些请求分发到多个 vLLM 副本（默认 GPU1-3）。
+            # localtrio 会把这些请求分发到各个 vLLM 副本（默认 GPU0 以外每张卡一个）。
             rollout_groups = await tqdm_asyncio.gather(
                 *(
                     run_rollout_group(

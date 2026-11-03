@@ -1,7 +1,7 @@
 """使用 localtrio（本地 GPU）和可切换搜索后端训练 Qwen3.5-4B Search-R1。
 
 训练与采样都在本机运行：默认 GPU0 跑 LoRA 训练（transformers + PEFT），
-GPU1/2/3 各跑一个 vLLM 采样副本；布局见 configs/4xa6000.yaml，
+GPU1/2/3 各跑一个 vLLM 采样副本；布局见 configs/4gpu.yaml，
 用 `uv run python -m localtrio info` 查看。checkpoint 保存为本地目录：
 ~/.cache/localtrio/runs/<run_id>/states/<name>（续训）和
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>（评测），终端会打印完整路径。

@@ -10,7 +10,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -180,7 +180,7 @@ teacher_client = service_client.create_sampling_client(
 
 本地版里，第一次创建 `teacher_client` 时 localtrio 会按 GPU 布局为 teacher 启动 vLLM 引擎。teacher 和 student 不是同一个基模时（比如默认的 27B），必须在配置里给 teacher 单独分配 GPU，脚本开头的 `check_teacher_layout()` 会提前检查这一点；如果 teacher 是 student 基模上的 LoRA，则和 student 共用同一组 vLLM，不需要额外配置。
 
-如果 teacher 是 27B 基模上训练出的 LoRA，还要多改一处：预设 `configs/4xa6000-opd-27b.yaml` 给 `Qwen/Qwen3.6-27B` 设了 `enable_lora: false`（教师默认只用基模）。需要把预设复制成自己的 YAML，把这一项改为 `true`；LoRA rank 大于默认的 `max_lora_rank: 64` 时一并调大。否则带 `--teacher-model-path` 运行时，localtrio 发出的 LoRA 请求会被未开启 LoRA 的 vLLM 引擎拒绝，报错出现在第一次 teacher `compute_logprobs` 时（此时 27B 已经加载完）。同基模（4B）的 LoRA teacher 走默认采样池，不受影响；下文[在本地运行同步版 demo](#在本地运行同步版-demo)第 5 小节的 9B 配置同样设了 `enable_lora: false`，换成 9B 上的 LoRA teacher 时同理。
+如果 teacher 是 27B 基模上训练出的 LoRA，还要多改一处：预设 `configs/4gpu-opd-27b.yaml` 给 `Qwen/Qwen3.6-27B` 设了 `enable_lora: false`（教师默认只用基模）。需要把预设复制成自己的 YAML，把这一项改为 `true`；LoRA rank 大于默认的 `max_lora_rank: 64` 时一并调大。否则带 `--teacher-model-path` 运行时，localtrio 发出的 LoRA 请求会被未开启 LoRA 的 vLLM 引擎拒绝，报错出现在第一次 teacher `compute_logprobs` 时（此时 27B 已经加载完）。同基模（4B）的 LoRA teacher 走默认采样池，不受影响；下文[在本地运行同步版 demo](#在本地运行同步版-demo)第 5 小节的 9B 配置同样设了 `enable_lora: false`，换成 9B 上的 LoRA teacher 时同理。
 
 ### 第 3 步：从当前 student 导出 sampler
 
@@ -337,7 +337,7 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.6-27B
 
 ### 2. 选择 GPU 布局
 
-默认 teacher `Qwen/Qwen3.6-27B` 和 student `Qwen/Qwen3.5-4B` 不是同一个基模，bf16 的 27B 也放不进单张 48GB 卡，所以**必须**使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)：
+默认 teacher `Qwen/Qwen3.6-27B` 和 student `Qwen/Qwen3.5-4B` 不是同一个基模，bf16 的 27B 也放不进单张 48GB 卡，所以**必须**使用预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)：
 
 | GPU | 用途 |
 | --- | --- |
@@ -346,7 +346,7 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.6-27B
 | GPU2、GPU3 | teacher `Qwen/Qwen3.6-27B`，`tensor_parallel_size=2`，只做 `compute_logprobs` |
 
 ```bash
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python -m localtrio info   # 确认布局
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python -m localtrio info   # 确认布局
 ```
 
 忘记设置 `LOCALTRIO_CONFIG` 时，脚本会在加载模型前直接退出并提示这条命令。
@@ -356,7 +356,7 @@ LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python -m localtrio info   
 先运行一个很小的 smoke test，确认模型、数据和权重保存链路都正常：
 
 ```bash
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml \
 uv run python experiments/general-opd/01-demo-sync.py \
   --steps 1 \
   --batch-size 1 \
@@ -371,7 +371,7 @@ uv run python experiments/general-opd/01-demo-sync.py \
 > 下面的命令用了 `--swanlab-mode online`，需要先 `uv run swanlab login`（或设置环境变量 `SWANLAB_API_KEY`）；不传 `--swanlab-mode` 时 SwanLab 默认也是 online，要求相同。两者都没有时，交互式终端会停下来让你选择，非交互运行（没有 TTY，比如后台任务）会直接报错。没登录就改用 `--swanlab-mode offline`（记录写到 `experiments/general-opd/swanlog/`）或 `disabled`。下文的异步版命令、第 5 小节不带 `--swanlab-mode` 的 9B 命令同理。
 
 ```bash
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml \
 uv run python experiments/general-opd/01-demo-sync.py \
   --steps 10 \
   --batch-size 4 \
@@ -555,7 +555,7 @@ teacher 不一定必须更大，但应当在目标能力上优于 student。本�
 同步版最适合理解和调试。数据流确认无误后，可以运行：
 
 ```bash
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml \
 uv run python experiments/general-opd/02-demo-async.py \
   --steps 10 \
   --batch-size 4 \

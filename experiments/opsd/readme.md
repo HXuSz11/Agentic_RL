@@ -565,7 +565,7 @@ advantage = -(student_logprob - teacher_logprob)
 
 ## 本地资源估算（估算，未实测）
 
-默认布局不需要任何配置文件（等价于 `configs/4xa6000.yaml`），固定 Teacher 与 Student 共用采样副本：
+默认布局不需要任何配置文件（等价于 `configs/4gpu.yaml`），固定 Teacher 与 Student 共用采样副本：
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |

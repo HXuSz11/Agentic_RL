@@ -436,7 +436,7 @@ prefill → autoregressive sampling → reward parsing → correctness verificat
 
 ## 本地资源估算（估算，未实测）
 
-默认布局不需要任何配置文件（等价于 `configs/4xa6000.yaml`）：
+默认布局不需要任何配置文件（等价于 `configs/4gpu.yaml`）：
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |

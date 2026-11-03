@@ -4,8 +4,8 @@ export const metadata = {
     seoTitle: '强化学习损失函数：Importance Sampling、PPO 与 CISPO',
   },
   grpo: {
-    seoTitle: 'GRPO 本地实战：在 4×A6000 上用 GSM8K 训练 Qwen3.5',
-    runDescription: '安装依赖与 vLLM，使用默认 4 卡布局运行 GSM8K 上的 GRPO 训练，了解采样参数、三种 loss 与日志指标。',
+    seoTitle: 'GRPO 本地实战：在自己的显卡上用 GSM8K 训练 Qwen3.5',
+    runDescription: '安装依赖与 vLLM，按本机卡数自动分配训练卡与采样卡，运行 GSM8K 上的 GRPO 训练，了解采样参数、三种 loss 与日志指标。',
   },
   'vision-grpo': {
     seoTitle: 'Vision GRPO 本地多模态强化学习：GeoQA 图文推理',

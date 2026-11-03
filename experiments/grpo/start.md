@@ -6,20 +6,26 @@
 
 ## 0. GPU 布局
 
-本章只用一个基模（`Qwen/Qwen3.5-4B`），直接使用**默认布局**，不需要配置文件：
+本章只用一个基模（`Qwen/Qwen3.5-4B`），直接使用**默认布局**，不需要配置文件。localtrio 按检测到的卡数分配：
 
 | GPU | 用途 |
 | --- | --- |
-| GPU0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
-| GPU1、GPU2、GPU3 | 各一个 vLLM 采样副本，每个 step 热加载最新 LoRA |
+| GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
+| 其余每张卡 | 各一个 vLLM 采样副本，每个 step 热加载最新 LoRA |
 
-这个布局与 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 相同。启动前可以确认一下：
+只有 1 张卡时，训练和采样共用 GPU 0。启动前可以确认一下：
 
 ```bash
 uv run python -m localtrio info
 ```
 
-只有一张 48GB 卡时，在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU0，速度明显变慢）。更多布局见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+不需要 4 张卡。本章的最低与推荐配置（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
 
 ## 1. 安装依赖
 
@@ -56,7 +62,7 @@ uv run python experiments/grpo/01-demo-sync.py \
     --swanlab-mode disabled
 ```
 
-第一次运行会先下载模型，再启动 1 个 trainer 和 3 个 vLLM 子进程，需要几分钟。`max-tokens=64` 时回答经常被截断、全组 reward 都是 0，日志里出现 `datums: 0` 属于正常现象，说明这一步没有训练信号。
+第一次运行会先下载模型，再启动 1 个 trainer 和每张采样卡一个 vLLM 子进程，需要几分钟。`max-tokens=64` 时回答经常被截断、全组 reward 都是 0，日志里出现 `datums: 0` 属于正常现象，说明这一步没有训练信号。
 
 ## 4. 启动训练
 
@@ -72,7 +78,7 @@ uv run python experiments/grpo/01-demo-sync.py \
     --swanlab-mode online
 ```
 
-异步版（逻辑相同，batch 内所有题目并发采样，不同题目按 prompt 哈希分到 3 个 vLLM 副本上并行生成；batch 较小时不一定 3 个副本都用上，正式实验推荐）：
+异步版（逻辑相同，batch 内所有题目并发采样，有多个采样副本时，不同题目按 prompt 哈希分到各个副本上并行生成；batch 较小时不一定每个副本都用上，正式实验推荐）：
 
 ```bash
 uv run python experiments/grpo/02-demo-async.py \
@@ -146,12 +152,12 @@ uv run python -m localtrio serve \
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存（训练） | 约 15～25 GB（4B bf16 权重约 9～10 GB + LoRA / AdamW 约 1～2 GB + 梯度检查点激活） |
-| GPU1～3 显存（采样） | 每卡约 40 GB（vLLM 按 `gpu_memory_utilization=0.85` 预占，大部分是 KV cache） |
-| 首次启动 | 下载模型 + 加载 4 个引擎，约 2～5 分钟 |
-| 每步耗时 | `batch 4 × group 8 × 512 tokens`：同步版约 0.5～1.5 分钟，异步版更快 |
-| 10 步试跑 | 连同启动约 10～25 分钟 |
-| 单卡布局 | 约为 4 卡布局速度的 1/3～1/4 |
+| GPU 0 显存（训练） | 约 15～25 GB（4B bf16 权重约 9～10 GB + LoRA / AdamW 约 1～2 GB + 梯度检查点激活）；24GB 卡用 micro-batch 8192（`configs/2gpu.yaml` 已调好），约 13～18 GB |
+| 采样卡显存 | vLLM 按 `gpu_memory_utilization=0.85` 预占每卡 85%，大部分是 KV cache：48GB 卡约 40 GB，24GB 卡约 20 GB |
+| 首次启动 | 下载模型 + 加载各引擎，约 2～5 分钟 |
+| 每步耗时 | 按 4 张 48GB 卡估算，`batch 4 × group 8 × 512 tokens`：同步版约 0.5～1.5 分钟，异步版更快 |
+| 10 步试跑 | 按 4 张卡估算，连同启动约 10～25 分钟 |
+| 卡更少时 | 2 张卡约慢 2～3 倍，1 张卡（`1gpu.yaml`）约慢 3～4 倍 |
 
 ## 7. 常见问题
 
@@ -164,17 +170,15 @@ uv run python -m localtrio serve \
 
 **vLLM 报 LoRA 模块不支持**（例如提到 `in_proj_qkv`、`out_proj` 等线性注意力投影）。把 `trainer.lora_target_modules` 改成 `standard`，只在 q/k/v/o + gate/up/down 上加 LoRA。
 
-修改以上配置的方式：复制 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 改成自己的文件，再用 `LOCALTRIO_CONFIG` 指定，例如：
+修改以上配置的方式：写一个只包含要改的项的 YAML（没写的项沿用默认值，可选项见 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 里的注释），再用 `LOCALTRIO_CONFIG` 指定，例如：
 
 ```yaml
-# my-grpo.yaml
+# my-grpo.yaml（没写 gpus：仍按卡数自动分配，GPU 0 训练、其余采样）
 trainer:
-  gpus: [0]
   max_tokens_per_microbatch: 8192
   lora_target_modules: standard
 models:
   default:
-    gpus: [1, 2, 3]
     gpu_memory_utilization: 0.75
     max_model_len: 8192
 ```
@@ -183,12 +187,12 @@ models:
 LOCALTRIO_CONFIG=my-grpo.yaml uv run python experiments/grpo/02-demo-async.py --steps 10 --batch-size 4 --group-size 8 --max-tokens 512
 ```
 
-**训练很慢。** 确认装了 `uv sync --extra kernels`（否则 Qwen3.5 的线性注意力走纯 PyTorch 实现）；用 `02-demo-async.py` 让 3 个采样副本并发工作。
+**训练很慢。** 确认装了 `uv sync --extra kernels`（否则 Qwen3.5 的线性注意力走纯 PyTorch 实现）；用 `02-demo-async.py` 让各个采样副本并发工作；采样吞吐随采样卡数近似线性增长，卡少时这是最主要的瓶颈。
 
 **`degenerate` 一直是 100%、`datums: 0`。** 同一题的回答全对或全错，没有相对优势信号。调大 `--group-size` 或 `--max-tokens`（回答被截断时拿不到 `\boxed{}`）。
 
 **引擎启动失败或卡住。** 子进程日志在 `~/.cache/localtrio/logs/`；也可以加 `LOCALTRIO_WORKER_LOGS=inherit` 让日志直接打印到终端。用 `nvidia-smi` 检查是否有其他进程占着 GPU。
 
-**想换 GPU 而不写配置文件。** 用环境变量 `LOCALTRIO_TRAINER_GPUS=0` 和 `LOCALTRIO_SAMPLER_GPUS=1,2,3` 指定训练卡和采样卡。
+**想换 GPU 而不写配置文件。** 用环境变量指定训练卡和采样卡，例如 `LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2`（GPU 0 训练、GPU 1–2 采样，其余卡留给别的任务）。
 
 **原版快速启动里说 `02-demo-async.py` 启动会报 timeout 配置错误。** 本地版已经删掉了那段 PyTRIO 专用的 `trio.configure(...)`，可以直接运行。

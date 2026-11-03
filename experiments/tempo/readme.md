@@ -154,7 +154,7 @@ TEMPO 只有一份参数：actor 和生成式 critic 是同一个基模 `Qwen/Qw
 | GPU 1、2、3 | vLLM 采样，3 个副本做 data parallel；actor rollout、终点估值、起点估值共用，每个 update 热加载最新 LoRA |
 | CPU | ALFWorld / TextWorld 环境；恢复中间状态时新开环境并重放动作历史 |
 
-默认布局与预设 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 相同。查看本机实际生效的布局：
+默认布局与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info

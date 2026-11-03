@@ -27,16 +27,16 @@ uv run swanlab login             # 可选；训练命令改用 --swanlab-mode di
 
 | 基模 | 预设 | GPU0 | GPU1 | GPU2 | GPU3 |
 | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B | 默认，不需要配置文件（即 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
-| Qwen3.5-9B | [`configs/4xa6000-big-student.yaml`](../../configs/4xa6000-big-student.yaml) | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
+| Qwen3.5-4B | 默认，不需要配置文件（即 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
+| Qwen3.5-9B | [`configs/4gpu-big-student.yaml`](../../configs/4gpu-big-student.yaml) | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
 
 在本目录下使用 9B 预设时，命令前加：
 
 ```bash
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml
+LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml
 ```
 
-用 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python -m localtrio info` 确认生效。评测只需要 vLLM，4B 和 9B 都可以用默认布局。显存与布局的整体说明见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+用 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python -m localtrio info` 确认生效。评测只需要 vLLM，4B 和 9B 都可以用默认布局。显存与布局的整体说明见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
 
 ## 3. 下载并整理数据
 
@@ -86,7 +86,7 @@ uv run python train_sft.py \
 训练 9B 时使用双卡训练布局和独立的 `--run-name`：
 
 ```bash
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_sft.py \
+LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
     --base-model Qwen/Qwen3.5-9B \
     --epochs 2 \
     --batch-size 4 \
@@ -126,7 +126,7 @@ uv run python train_rl.py \
 - `--max-tokens` 是单轮生成上限；`--max-seq-len` 包含文字、图片和工具历史。`--max-turns 8` 包含最终回答这一轮。
 - 整批 Datum 一次交给 `forward_backward`，localtrio 的 trainer 按 `trainer.max_tokens_per_microbatch` 自动拆 micro-batch 并累积梯度，无需设置 mini batch。
 - 从 SFT 接 RL 默认使用新的优化器。继续已有 RL 训练时，可换成 RL 的 `state_path` 并加 `--resume-optimizer`；它会恢复优化器状态，但脚本仍从新一轮数据遍历开始，不恢复之前的样本位置。
-- 要训练 3 个 epoch，改为 `--epochs 3`。9B 传入 9B SFT 的 `state_path`，命令前加 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml`；4B 与 9B 使用各自的 `--run-name`。
+- 要训练 3 个 epoch，改为 `--epochs 3`。9B 传入 9B SFT 的 `state_path`，命令前加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`；4B 与 9B 使用各自的 `--run-name`。
 
 ## 6. 评测 Base、SFT 和 RL
 
@@ -228,7 +228,7 @@ uv run python analysis.py
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定（路径相对于当前目录）：
 
 ```bash
-cp ../../configs/4xa6000.yaml my-spec-o3.yaml   # 9B 则复制 4xa6000-big-student.yaml
+cp ../../configs/4gpu.yaml my-spec-o3.yaml   # 9B 则复制 4gpu-big-student.yaml
 LOCALTRIO_CONFIG=my-spec-o3.yaml uv run python train_rl.py ...
 ```
 

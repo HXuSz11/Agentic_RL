@@ -15,7 +15,7 @@ uv run python train_rl.py \
     --swanlab-mode online
 
 从 9B SFT state 开始时使用双卡训练布局：
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_rl.py --state-path <9B SFT state>
+LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_rl.py --state-path <9B SFT state>
 """
 
 import argparse

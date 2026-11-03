@@ -14,17 +14,17 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《PyTrio-Jev》（Jev 决策模型）的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。文中的数值、曲线和截图均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。方法设计、实验与结论来自原作者，感谢原作者和 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《PyTrio-Jev》（Jev 决策模型）的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。不需要 4 张卡，也不需要登录、API key，没有计费。文中的数值、曲线和截图均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。方法设计、实验与结论来自原作者，感谢原作者和 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
 > - 完整代码：[`experiments/pytrio-jev`](./) / 快速启动：[`start.md`](./start.md)
-> - 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - 方法参考：[Intern-Decision](https://github.com/InternLM/Intern-Decision)、[Jev 架构逆向](https://archerhume.com/posts/jevs-architecture-unmasked)、[Datawhale AgentJev 教程](https://mp.weixin.qq.com/s/F7i83rn8oDzQ-sg13MKwWA)
 > - 训练数据：[`LocalLLaMA/typed-decisions`](https://huggingface.co/datasets/LocalLLaMA/typed-decisions)、[`Team-ACE/ToolACE`](https://huggingface.co/datasets/Team-ACE/ToolACE)
 > - SwanLab：[原文实验（PyTRIO 版）公开的训练记录](https://swanlab.cn/@kmno4/agentic-rl-lab-pytrio-jev/v1/qt5fzd/runs/g4i73a65/chart)
 
-原文在 PyTRIO 上用 2160 条训练数据、2 个 epoch、270 步 LoRA 完成训练，总开销 14.34 元人民币，一顿麦当劳早餐。在与 Intern-Decision 完全一致的评测集上，五项平均分从 base 的 76.30 提到 83.74：Typed Decision 和 ToolACE 两项直接超过 Jev，其余大部分逼近 Jev。本地版没有计费，同样的 270 步只占用一张 48GB 显卡，估计一小时左右就能训完（估算，见第 4 节「本地资源估算」）。
+原文在 PyTRIO 上用 2160 条训练数据、2 个 epoch、270 步 LoRA 完成训练，总开销 14.34 元人民币，一顿麦当劳早餐。在与 Intern-Decision 完全一致的评测集上，五项平均分从 base 的 76.30 提到 83.74：Typed Decision 和 ToolACE 两项直接超过 Jev，其余大部分逼近 Jev。本地版没有计费，同样的 270 步训练只用一张卡，48GB 卡上估计一小时左右就能训完；评测时多一张卡做采样更快（估算，最低与推荐配置见第 4 节「本地资源估算」）。
 
 ## 0. Jev 到底是什么？
 
@@ -44,7 +44,7 @@
 
 这些场景不需要大模型思前想后写几千字分析，**只需要一个快、稳、概率可信的决策**。让一个通用大模型每次都想半天再做这种三选一，是拿慢思考做快思考的活。我的看法是：快思考和慢思考需要协同配合，慢思考负责开放世界的推理与规划，快思考负责高频、固定、可枚举的路由与决策。Jev 这类模型填的就是快思考这一格。
 
-这件事的门槛到底有多低？这篇就是答案：原文在云端只花了一杯咖啡不到的价钱；有一张 48GB 显卡，你在本地也完全可以训一个自己领域的决策模型。
+这件事的门槛到底有多低？这篇就是答案：原文在云端只花了一杯咖啡不到的价钱；有一张 48GB 显卡（或两张 24GB 显卡），你在本地也完全可以训一个自己领域的决策模型。
 
 ## 1. 先看结果
 
@@ -106,7 +106,7 @@
 ```bash
 # 0. 安装依赖（含 Qwen3.5 线性注意力训练加速 kernel）+ 确认 GPU 布局
 uv sync --extra kernels
-uv run python -m localtrio info   # 默认：GPU0 训练，GPU1/2/3 各一个 vLLM 采样副本
+uv run python -m localtrio info   # 默认：GPU0 训练，其余卡各一个 vLLM 采样副本（单卡时共用）
 uv run swanlab login   # SwanLab 训练曲线（可选，也可用 --swanlab-mode offline）
 
 # 1. 下载并切分全部数据（训练 2160 条 + 五项评测集）
@@ -194,27 +194,36 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 
 ### 本地资源估算
 
-> 以下数字是按模型规模和 token 量推算的**估算值，未实测**，实际取决于 vLLM / transformers 版本、是否安装 kernel 以及数据长度。
+> 以下数字是按模型规模和 token 量推算的**估算值，未实测**，实际取决于显卡型号、vLLM / transformers 版本、是否安装 kernel 以及数据长度。
 
-**GPU 布局**：用内置默认布局即可，不需要配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+**需要几张卡**：本章以 SFT 和推理为主，资源占用小，不需要 4 张卡。
 
-| 阶段 | GPU0 | GPU1 / GPU2 / GPU3 |
+| | 配置（估算） | 怎么运行 |
+| --- | --- | --- |
+| 最低 | 1 张 ≥48GB，或 2 张 ≥24GB | 1 张卡：`LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU0）；2 张 24GB 卡：`LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） |
+| 推荐 | 2 张卡 | 不写配置直接运行：GPU0 训练，GPU1 采样。卡更多时多出来的卡都会变成采样副本，评测更快 |
+
+`LOCALTRIO_CONFIG` 的路径相对当前目录：上面是在仓库根目录运行的写法，在 `experiments/pytrio-jev/` 内运行时写 `../../configs/...`。用 `uv run python -m localtrio info` 确认布局。
+
+**GPU 布局**：用内置默认布局即可，不需要配置文件（4 张卡时等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
+
+| 阶段 | GPU0 | 其余卡（GPU1 起） |
 | --- | --- | --- |
 | `train.py` | LoRA 训练（transformers + PEFT） | 空闲（训练脚本不采样，vLLM 不会启动） |
-| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 各一个 vLLM 副本；请求按 prompt 前缀哈希分到固定副本（命中 prefix cache），某副本明显更忙（在途请求比最空闲的副本多 8 个以上）时退回最少负载路由 |
+| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 每张卡一个 vLLM 副本；请求按 prompt 前缀哈希分到固定副本（命中 prefix cache），某副本明显更忙（在途请求比最空闲的副本多 8 个以上）时退回最少负载路由 |
 
-评测时 GPU0 空闲，可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把它也加入采样池（评测脚本不会启动 trainer）。
+只有 1 张卡时，两个阶段都在 GPU0 上，vLLM 只占 40% 显存。评测时 GPU0 空闲，可以用 `LOCALTRIO_SAMPLER_GPUS` 把它也加入采样池（评测脚本不会启动 trainer），按实际卡数写，例如 2 张卡时 `LOCALTRIO_SAMPLER_GPUS=0,1`。
 
-**显存（估算）**：
+**显存（估算，每卡 48GB 时）**：
 
-- GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足。
-- GPU1–3：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。
+- GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足；24GB 卡把 `trainer.max_tokens_per_microbatch` 调到 8192（约 13–18GB，`configs/2gpu.yaml` 已经这样设置）。
+- 采样卡：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。24GB 卡约 20GB，KV cache 只剩约 10GB，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len`（如 16384）。
 
 **耗时（估算）**：
 
 - 首次运行需要下载 Qwen3.5-4B（约 9–10GB）和数据集；
-- 训练 270 步：每步是一次约 1–2 万 token 的前向 + 反向，A6000 上估计每步数秒到十几秒，加上模型加载约 0.5–1.5 小时；没装 `--extra kernels` 时 Qwen3.5 线性注意力走 PyTorch 回退实现，会明显更慢；
-- 温度校准（120 案例）+ 五项评测（约 1000 次长 prompt 前向）：3 个 vLLM 副本估计合计十几到几十分钟。
+- 训练 270 步：只用 GPU0，与卡数无关。每步是一次约 1–2 万 token 的前向 + 反向，以一张 Ampere 架构的 48GB 卡为例估计每步数秒到十几秒，加上模型加载约 0.5–1.5 小时；没装 `--extra kernels` 时 Qwen3.5 线性注意力走 PyTorch 回退实现，会明显更慢；
+- 温度校准（120 案例）+ 五项评测（约 1000 次长 prompt 前向）：按 4 张卡（3 个 vLLM 副本）估计合计十几到几十分钟；2 张卡（1 个副本）约慢 2–3 倍，单卡共用时更慢一些。
 
 ## 5. 校准：让概率"说真话"
 

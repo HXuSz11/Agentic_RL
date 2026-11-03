@@ -7,7 +7,7 @@ uv run python experiments/vision-grpo/eval.py
 uv run python experiments/vision-grpo/eval.py \
     --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/vision-grpo-qwen35-4b-geoqa-step-100-sampler
 
-评测只启动 vLLM 采样副本（默认 GPU1-3），不加载训练引擎。
+评测只启动 vLLM 采样副本（默认 GPU0 以外每张卡一个；只有 1 张卡时用 GPU0），不加载训练引擎。
 """
 
 from __future__ import annotations

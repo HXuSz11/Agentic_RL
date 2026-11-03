@@ -18,7 +18,7 @@ const related = computed(() => current.value ? chapters.value.filter(c => c.grou
     <p class="related-links">
       <a :href="withBase(path('/guide/learning-path.html'))">完整学习路线</a>
       <a :href="withBase(path('/guide/localtrio.html'))">localtrio：本地版 Train API</a>
-      <a :href="withBase(path('/guide/hardware.html'))">4×A6000 显存与 GPU 布局</a>
+      <a :href="withBase(path('/guide/hardware.html'))">显存与 GPU 布局：几张卡能跑什么</a>
     </p>
   </aside>
 </template>

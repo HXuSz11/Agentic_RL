@@ -615,7 +615,7 @@ uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练�
 uv run python -m localtrio info    # 确认 GPU 布局
 ```
 
-这一章的 Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，直接用**内置默认布局**，不需要配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+这一章的 Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，直接用**内置默认布局**，不需要配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
 | GPU | 训练脚本运行时 | 评测时 |
 | --- | --- | --- |

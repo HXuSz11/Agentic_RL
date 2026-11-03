@@ -17,7 +17,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行。4B 用默认布局（GPU0 训练、GPU1/2/3 采样）；9B 用 `configs/4xa6000-big-student.yaml`（GPU0,1 训练、GPU2,3 采样），详见[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行。4B 用默认布局（GPU0 训练、GPU1/2/3 采样）；9B 用 `configs/4gpu-big-student.yaml`（GPU0,1 训练、GPU2,3 采样），详见[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
@@ -331,10 +331,10 @@ SFT 让模型学习“**思考 → 工具调用 → 图片观察 → 继续思�
 
 | 基模 | 预设 | GPU0 | GPU1 | GPU2 | GPU3 |
 | --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B | 默认（不写配置，即 `configs/4xa6000.yaml`） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
-| Qwen3.5-9B | `configs/4xa6000-big-student.yaml` | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
+| Qwen3.5-4B | 默认（不写配置，即 `configs/4gpu.yaml`） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
+| Qwen3.5-9B | `configs/4gpu-big-student.yaml` | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
 
-9B 的 SFT 和 RL 命令前加 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml`（在 `experiments/spec-o3/` 目录运行时）。评测只需要 vLLM，4B 和 9B 都可以用默认布局，训练结束后还可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把 4 张卡都用来采样。
+9B 的 SFT 和 RL 命令前加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（在 `experiments/spec-o3/` 目录运行时）。评测只需要 vLLM，4B 和 9B 都可以用默认布局，训练结束后还可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把 4 张卡都用来采样。
 
 ### 7.2 本地资源估算
 
@@ -425,7 +425,7 @@ uv run python train_sft.py \
 训练 9B 时，将 `--base-model` 改为 `Qwen/Qwen3.5-9B`，使用独立的 `--run-name`，并切换到双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
 
 ```bash
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_sft.py \
+LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
     --base-model Qwen/Qwen3.5-9B \
     --epochs 2 \
     --run-name spec-o3-sft-9b
@@ -461,7 +461,7 @@ uv run python train_rl.py \
 
 `--max-tokens` 限制单次生成长度；`--max-seq-len` 限制包含文字、图片与工具历史的总上下文。`--max-turns 8` 是最多 8 轮 assistant 生成，最终答案也占一轮；当前实现最多执行前 7 轮的工具调用。
 
-上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模，命令前同样加 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml`。不同实验使用独立的 `--run-name`。
+上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模，命令前同样加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`。不同实验使用独立的 `--run-name`。
 
 当前脚本每 100 个累计 rollout step 保存一次 state 和 sampler，epoch 结束时也保存。这个周期保存功能是在首次 RL 实验之后补上的，便于后续运行时保留中间权重。训练日志里同时记录 rollout step 与实际 updates，两者在跳过整批更新时会有差别。
 

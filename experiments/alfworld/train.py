@@ -18,7 +18,7 @@ uv run --extra alfworld python train.py \
     --save-every 5 \
     --swanlab-mode disabled
 
-正式训练：（原文在 PyTRIO 上约 12 小时；本地 4×A6000 的耗时估算见 start.md）
+正式训练：（原文在 PyTRIO 上约 12 小时；本地耗时估算见 start.md）
 uv run --extra alfworld python train.py \
     --max-steps 80 \
     --games-per-batch 8 \

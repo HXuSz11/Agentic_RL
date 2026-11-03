@@ -243,7 +243,7 @@ training_client.optim_step(adam_params).result()
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU 布局 | 内置默认布局（即 `configs/4xa6000.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
+| GPU 布局 | 内置默认布局（即 `configs/4gpu.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
 | GPU0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加上 LoRA 与 AdamW 状态、梯度检查点激活和分块 logits，单条轨迹 ≤ 8,192 token 时约 15–25 GB |
 | GPU1–3 采样显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占约 40 GB（权重 + KV cache） |
 | 单个 step | 64 条轨迹：rollout 受搜索延迟和最多 6 轮串行生成影响，约 2–4 分钟；训练约 1–3 分钟 |

@@ -23,7 +23,7 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基
 
 ## 1. GPU 布局
 
-Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，所有训练脚本都用**内置默认布局**，不需要 `LOCALTRIO_CONFIG`（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，所有训练脚本都用**内置默认布局**，不需要 `LOCALTRIO_CONFIG`（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
 | GPU | 用途 |
 | --- | --- |
@@ -171,7 +171,7 @@ uv run python experiments/medical-opd/01-eval-ceval.py   --model "$WEIGHTS" --ma
 
 ## 8. 常见问题
 
-**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/4xa6000.yaml` 修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
+**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/4gpu.yaml` 修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
 
 ```yaml
 trainer:

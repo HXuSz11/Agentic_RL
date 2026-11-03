@@ -11,7 +11,7 @@ reverse_kl = student_logprob - teacher_logprob，再用 -reverse_kl 做 advantag
 - 最终权重保存在 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<save-weights-name>。
 
 小成本试跑（仓库根目录）：
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml \
 uv run python experiments/general-opd/01-demo-sync.py \
     --steps 10 \
     --batch-size 4 \
@@ -255,7 +255,7 @@ def check_teacher_layout(args: argparse.Namespace) -> None:
     """本地版专用：不同基模的 teacher 必须在 localtrio 配置里单独分配 GPU。
 
     默认布局把 GPU1-3 都给 student 的 vLLM 副本；Qwen3.6-27B 这类 teacher（bf16 约 54GB）
-    放不进单张 48GB 卡，需要预设 configs/4xa6000-opd-27b.yaml（GPU2,3 张量并行）。
+    放不进单张 48GB 卡，需要预设 configs/4gpu-opd-27b.yaml（GPU2,3 张量并行）。
     这里提前检查，避免先花几分钟加载 27B 再报 OOM。
     """
     teacher = args.teacher_base_model or args.base_model
@@ -266,8 +266,8 @@ def check_teacher_layout(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"teacher {teacher} 与 student {args.base_model} 不是同一个基模，"
             "需要在 localtrio 配置里为 teacher 单独分配 GPU。\n"
-            "4×A6000 + Qwen3.6-27B teacher 请使用预设：\n"
-            "  LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python experiments/general-opd/<脚本> ...\n"
+            "Qwen3.6-27B teacher（4 张 48GB 卡）可以直接用预设：\n"
+            "  LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python experiments/general-opd/<脚本> ...\n"
             "或换成与 student 同基模的 teacher：--teacher-base-model Qwen/Qwen3.5-4B "
             "[--teacher-model-path <sampler_weights 目录>]"
         )

@@ -53,7 +53,7 @@ function navigation() {
         { text: '参与贡献', link: '/guide/contributing.html' },
         { text: '全部实验', link: '/experiments/' },
       ] },
-      { text: '本地训练（4×A6000）', items: [
+      { text: '本地训练', items: [
         { text: 'localtrio：本地版 Train API', link: '/guide/localtrio.html' },
         { text: '显存与 GPU 布局规划', link: '/guide/hardware.html' },
       ] },

@@ -2,7 +2,7 @@
 
 读取顺序（后者覆盖前者）：
 
-1. 内置默认值（适配 4×A6000 48GB，训练 Qwen3.5-4B 这类小模型）；
+1. 内置默认值（按检测到的卡数自动分配：GPU 0 训练、其余采样，单卡时共用；按 Qwen3.5-4B 这类小模型取值）；
 2. ``LOCALTRIO_CONFIG`` 指向的 YAML，或当前目录的 ``localtrio.yaml``；
 3. ``trio.configure(...)`` 传入的关键字参数；
 4. 少量环境变量（``LOCALTRIO_HOME``、``LOCALTRIO_SAMPLER_BACKEND`` 等）。
@@ -78,7 +78,7 @@ class TrainerConfig:
 
     gpus: list[int] = field(default_factory=lambda: [0])
     dtype: str = "bfloat16"
-    # sdpa 在 A6000（Ampere）上开箱即用；装了 flash-attn 可改为 flash_attention_2
+    # sdpa 在 Ampere 及更新的显卡上开箱即用；装了 flash-attn 可改为 flash_attention_2
     attn_implementation: str = "sdpa"
     gradient_checkpointing: bool = True
     # 一个 micro-batch 内 padding 后的 token 上限；4B 模型 + 梯度检查点在 48GB 上 16k 较稳妥

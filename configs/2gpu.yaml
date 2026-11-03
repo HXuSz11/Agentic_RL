@@ -1,0 +1,17 @@
+# 2 卡布局：GPU 0 训练，GPU 1 采样。不写配置文件、检测到 2 张卡时也会自动这样分配。
+# 每卡 ≥24GB 即可跑 4B 的单基模章节（RTX 3090 / 4090 / 5090、A6000、A100 等）；
+# 采样只有 1 个副本，速度约为 4 卡布局的 1/2～1/3。
+# 用法：LOCALTRIO_CONFIG=configs/2gpu.yaml uv run python experiments/grpo/01-demo-sync.py
+trainer:
+  gpus: [0]
+  gradient_checkpointing: true
+  # 48GB 及以上的卡可改回默认 16384；24GB 卡保持 8192，长轨迹章节仍 OOM 时再降到 4096
+  max_tokens_per_microbatch: 8192
+models:
+  default:
+    gpus: [1]
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    max_num_seqs: 256
+    # 24GB 卡上 KV cache 只有约 10GB：vLLM 启动报 KV 不足时设置 max_model_len（如 16384）
+    # max_model_len: 16384

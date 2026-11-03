@@ -1,0 +1,13 @@
+# 9B 级别学生模型（例如 Spec-o3 的 Qwen3.5-9B），4 张卡时的宽裕布局
+#   GPU 0,1  : LoRA 训练，权重按层切分到两张卡（device_map=auto）
+#   GPU 2,3  : vLLM 采样，2 个副本
+# 只有 2 张 ≥48GB 的卡时也能跑 9B：直接用 2gpu.yaml（训练单卡、micro-batch 8192）。
+# 24GB 卡跑 9B：训练需要两张卡切分、采样再要一张卡，至少 3 张。
+trainer:
+  gpus: [0, 1]
+  max_tokens_per_microbatch: 12288
+models:
+  default:
+    gpus: [2, 3]
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.88

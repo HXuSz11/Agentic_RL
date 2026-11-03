@@ -7,8 +7,8 @@
 4. 用 boxed answer reward 计算 group-relative advantage；
 5. 用内置 importance_sampling / ppo loss，或 forward_backward_custom 写的 CISPO loss 做一次优化。
 
-训练（LoRA）跑在 trainer 子进程，采样跑在 vLLM 子进程，默认 GPU0 训练、GPU1-3 采样；
-其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定。
+训练（LoRA）跑在 trainer 子进程，采样跑在 vLLM 子进程，默认 GPU0 训练、其余每张卡一个采样副本（只有 1 张卡时共用 GPU0）；
+其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定（如 configs/1gpu.yaml、configs/2gpu.yaml）。
 
 最小试跑（仓库根目录）：
 
@@ -562,7 +562,7 @@ def main(config: GRPOConfig) -> None:
             f"{len(train_data)} examples once"
         )
 
-    # localtrio 会在本机启动 trainer（默认 GPU0）和 vLLM 采样副本（默认 GPU1-3）子进程，
+    # localtrio 会在本机启动 trainer（默认 GPU0）和 vLLM 采样副本（默认其余每张卡一个，单卡时共用 GPU0）子进程，
     # 首次运行需要下载模型并加载引擎，可能要几分钟。
     print("Creating localtrio clients...")
     service_client = trio.ServiceClient()

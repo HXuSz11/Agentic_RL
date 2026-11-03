@@ -18,7 +18,7 @@ uv run swanlab login             # 可选；不记录到云端时给命令加 --
 
 ## 1. GPU 布局
 
-默认使用内置布局，不需要任何配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+默认使用内置布局，不需要任何配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
 | GPU | 角色 |
 | --- | --- |
@@ -191,7 +191,7 @@ LOCALTRIO_SAMPLER_GPUS=1,2 uv run python experiments/tournament-grpo/train.py \
   --run-name tournament-grpo-20step-localjudge
 ```
 
-也可以写进 YAML：复制 `configs/4xa6000.yaml`，把 `models.default.gpus` 改成 `[1, 2]`，再用 `LOCALTRIO_CONFIG` 指定。`.env` 改为：
+也可以写进 YAML：复制 `configs/4gpu.yaml`，把 `models.default.gpus` 改成 `[1, 2]`，再用 `LOCALTRIO_CONFIG` 指定。`.env` 改为：
 
 ```dotenv
 TOURNAMENT_JUDGE_BACKEND=chat
@@ -236,7 +236,7 @@ RACE 脚本遇到 `reasoning_content` 会直接报错，同样要用非思考模
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定：
 
 ```bash
-cp configs/4xa6000.yaml my-tournament.yaml   # 按下面的说明修改
+cp configs/4gpu.yaml my-tournament.yaml   # 按下面的说明修改
 LOCALTRIO_CONFIG=my-tournament.yaml uv run python experiments/tournament-grpo/train.py ...
 ```
 

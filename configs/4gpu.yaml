@@ -1,9 +1,11 @@
-# 4×A6000（48GB）默认布局：单一基模的 RL / SFT 章节
+# 4 卡布局（每卡建议 ≥24GB；数字按 48GB 卡写，24GB 卡见下方注释）：单一基模的 RL / SFT 章节
 #   GPU 0      : LoRA 训练（transformers + PEFT，bf16 + 梯度检查点）
 #   GPU 1,2,3  : vLLM 采样，3 个副本做 data parallel，LoRA 热加载
 # 适用：GRPO、Vision GRPO、Jev、DAPO、GSPO、OPSD、AgentOPSD、Medical OPD、
 #       Search-R1、ReTool、ALFWorld、TEMPO、Spec-o3（4B）、Tournament-GRPO
-# 这也是不提供任何配置文件时的内置默认值。
+# 不写配置文件时，localtrio 会按检测到的卡数自动套用同样的规则：GPU 0 训练，其余全部采样；
+# 只有 1 张卡时训练与采样共用（见 1gpu.yaml）。这个文件只是把 4 卡时的取值写明，方便修改。
+# 24GB 卡（RTX 3090 / 4090 等）：把 trainer.max_tokens_per_microbatch 调到 8192。
 home: ~/.cache/localtrio          # 权重与日志目录，可改到大容量磁盘
 model_source: auto                # auto | huggingface | modelscope | local（国内网络建议 modelscope；local 只用 model_paths 或本地路径，不下载）
 trainer:

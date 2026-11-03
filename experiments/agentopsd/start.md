@@ -18,7 +18,7 @@
 | GPU 1、2、3 | vLLM 采样，3 个副本做 data parallel；Student rollout 与 Teacher `compute_logprobs` 共用，每步热加载最新 LoRA |
 | CPU | ALFWorld / TextWorld 环境，每条训练轨迹一个子进程 |
 
-默认布局与预设 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 相同。查看本机实际生效的布局：
+默认布局与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info

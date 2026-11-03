@@ -18,7 +18,7 @@ uv run swanlab login             # 可选；不记录到云端时给训练命令
 
 ## 2. GPU 布局
 
-本章使用内置默认布局，不需要任何配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+本章使用内置默认布局，不需要任何配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
 | 资源 | 角色 |
 | --- | --- |
@@ -161,7 +161,7 @@ uv run python experiments/retool/analysis.py --output experiments/retool/eval-re
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定：
 
 ```bash
-cp configs/4xa6000.yaml my-retool.yaml   # 按下面的说明修改
+cp configs/4gpu.yaml my-retool.yaml   # 按下面的说明修改
 LOCALTRIO_CONFIG=my-retool.yaml uv run python experiments/retool/train.py ...
 ```
 

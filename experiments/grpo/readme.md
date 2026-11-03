@@ -14,13 +14,13 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的截图与曲线来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章最少 1 张 48GB 卡或 2 张 24GB 卡，卡多只是采样更快（见下文“本地资源估算”）。文中标注“原文在 PyTRIO 上的结果”的截图与曲线来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
 
 下一篇会写 OPD，也就是 On-Policy Distillation。它和 GRPO 很像，都是拿当前策略自己采样出来的轨迹继续训练；区别是 GRPO 的信号来自 reward，OPD 的信号来自 teacher 对 student 轨迹的评价。这个我们下一篇再详细的解释。
 
 传统上你当然可以自己把训练、采样、权重同步、日志和 checkpoint 全部接起来。问题是，如果我今天只是想比较 3 个 loss 的差异呢？如果明天还想把 `group_size`、学习率、clip 阈值组合成 10 组参数一起跑呢？这时候最大的成本不再是“会不会写 GRPO”，而是你要一直照顾 infra 和 trainer。
 
-原文用 PyTRIO 云端服务解决这个问题；本地版用 localtrio 把同一套接口搬到自己的 4 张 A6000 上：实验脚本只写数据、reward、loss 和实验循环；前向、反向、优化器更新、LoRA 权重保存交给 GPU0 上的 trainer 子进程，采样交给 GPU1～3 上的 vLLM 副本（每个 step 按路径热加载最新的 LoRA）。这样依然更像做实验，而不是先搭一套训练平台。
+原文用 PyTRIO 云端服务解决这个问题；本地版用 localtrio 把同一套接口搬到自己的显卡上：实验脚本只写数据、reward、loss 和实验循环；前向、反向、优化器更新、LoRA 权重保存交给 GPU 0 上的 trainer 子进程，采样交给其余卡上的 vLLM 副本（只有 1 张卡时与训练共用 GPU 0；每个 step 按路径热加载最新的 LoRA）。这样依然更像做实验，而不是先搭一套训练平台。
 
 ## GRPO 是从哪里来的？
 
@@ -64,7 +64,7 @@ $$
 
 代码就在本目录：[`01-demo-sync.py`](./01-demo-sync.py)、[`02-demo-async.py`](./02-demo-async.py)，以及只保留两个内置 loss 的教学版 [`03-grpo.py`](./03-grpo.py)。
 
-有一台带 GPU 的机器（推荐 4×A6000；单张 48GB 卡可用 `configs/1gpu.yaml` 预设）就能直接跑；SwanLab 账号是可选的，用来看曲线。
+有一台带 NVIDIA 显卡的机器就能直接跑：1 张 ≥48GB 的卡，或 2 张及以上 ≥24GB 的卡（卡数与预设见下文“本地资源估算”）；SwanLab 账号是可选的，用来看曲线。
 
 直接 clone 这个仓库的话，依赖（torch、transformers、peft、vLLM 等）已经写在根目录的 `pyproject.toml` 里了：
 
@@ -77,7 +77,7 @@ uv run swanlab login      # 可选；只用 --swanlab-mode disabled 时不需要
 
 SwanLab：https://swanlab.cn/
 
-不需要 `trio login`，也没有账单。默认 GPU 布局不用写任何配置文件：GPU0 训练，GPU1～3 各一个 vLLM 采样副本，可以用 `uv run python -m localtrio info` 确认。更多布局见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+不需要 `trio login`，也没有账单。默认 GPU 布局不用写任何配置文件：localtrio 按检测到的卡数分配，GPU 0 训练，其余卡各一个 vLLM 采样副本，只有 1 张卡时共用 GPU 0；可以用 `uv run python -m localtrio info` 确认。更多布局见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 这一篇主要讲同步版 `01-demo-sync.py`。异步版做的是同一件事，只是把 batch 内每道题的 rollout 并发提交出去，更适合正式跑实验。
 
@@ -120,20 +120,27 @@ uv run python experiments/grpo/01-demo-sync.py \
 
 ![原文在 PyTRIO 上运行时的终端输出](./images/terminal-run.png)
 
-*上图是原文在 PyTRIO 上运行时（训练中途）的终端输出；本地运行时在启动阶段还会多出几行 localtrio 日志：每个引擎子进程各一行 `[localtrio] starting trainer/sampler[...] on GPU N (log: ...)` 和 `[localtrio] ... ready`（默认 1 个 trainer + 3 个 sampler 副本），以及一行 `[localtrio] training run ...`（显示 run id、LoRA 作用的模块和可训练参数量）。*
+*上图是原文在 PyTRIO 上运行时（训练中途）的终端输出；本地运行时在启动阶段还会多出几行 localtrio 日志：每个引擎子进程各一行 `[localtrio] starting trainer/sampler[...] on GPU N (log: ...)` 和 `[localtrio] ... ready`（1 个 trainer，加上每张采样卡一个 sampler 副本），以及一行 `[localtrio] training run ...`（显示 run id、LoRA 作用的模块和可训练参数量）。*
 
 ### 本地资源估算
 
 > 以下数字是按模型大小和默认参数推算的**估算值，未实测**，实际取决于驱动、vLLM / transformers 版本、是否安装 `kernels` 以及生成长度。
 
+本章需要几张卡（与 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md) 一致）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与 vLLM 共卡，vLLM 占 40%） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 `configs/4gpu.yaml` 相同；3 张、8 张卡也直接运行，采样副本数跟着卡数变 | 基准 |
+
 | 项目 | 估算 |
 | --- | --- |
-| GPU 布局 | 默认布局（`configs/4xa6000.yaml`，与内置默认值相同） |
-| GPU0（训练） | Qwen3.5-4B bf16 权重约 9～10 GB + LoRA / AdamW 状态约 1～2 GB + 激活（梯度检查点，单个 micro-batch ≤16k token），合计约 15～25 GB |
-| GPU1～3（采样） | 每张卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占约 40 GB（权重之外都是 KV cache） |
-| 首次启动 | 下载模型约 9～10 GB；4 个引擎进程加载 + vLLM 编译 / CUDA graph 捕获，约 2～5 分钟 |
-| 每个 step | `batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定 3 个副本都用上），会更快 |
-| 10 步试跑 | 连同启动约 10～25 分钟 |
+| GPU 0（训练） | Qwen3.5-4B bf16 权重约 9～10 GB + LoRA / AdamW 状态约 1～2 GB + 激活（梯度检查点，单个 micro-batch ≤16k token），合计约 15～25 GB；24GB 卡把 micro-batch 调到 8192，约 13～18 GB |
+| 其余卡（采样） | 每张卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占 85% 显存（权重之外都是 KV cache）：48GB 卡约 40 GB，24GB 卡约 20 GB |
+| 首次启动 | 下载模型约 9～10 GB；各引擎进程加载 + vLLM 编译 / CUDA graph 捕获，约 2～5 分钟 |
+| 每个 step | 按 4 张 48GB 卡估算，`batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定每个副本都用上），会更快。2 张卡约慢 2～3 倍 |
+| 10 步试跑 | 按 4 张卡估算，连同启动约 10～25 分钟 |
 | 磁盘 | 每份 sampler 权重（rank 32 LoRA，bf16）几十到几百 MB，训练中的临时权重默认保留最近 4 份（仍被 SamplingClient 引用的会多留） |
 
 ## 第一步：准备 prompt 和 reward
@@ -702,7 +709,7 @@ cispo_clip_high_threshold: 2.0 / 4.0
 
 单跑一个 GRPO demo，任何框架都可以。真正麻烦的是：我要同时评估 3 个 loss、10 组参数，还想把记录、权重、运行日志都留好。localtrio 把训练和采样引擎藏在同一套接口后面，实验本身就变成普通 Python 任务，每次运行的权重和日志都落在 `~/.cache/localtrio/` 下。
 
-和云端不同的是，本地 GPU 是固定的：默认布局下，一次运行就占满 4 张卡，最简单的做法是按顺序跑，或者写一个简单的 launcher 排队跑。想并行跑两组时，可以把 4 张卡拆成两套“1 训练 + 1 采样”（示例，未实测）：
+和云端不同的是，本地 GPU 是固定的：默认布局下，一次运行会占满本机所有的卡（GPU 0 训练，其余采样），最简单的做法是按顺序跑，或者写一个简单的 launcher 排队跑。卡够多时也可以并行跑，比如有 4 张卡，可以拆成两套“1 训练 + 1 采样”（示例，未实测）：
 
 ```bash
 LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1 uv run python experiments/grpo/02-demo-async.py --loss-fn ppo ...

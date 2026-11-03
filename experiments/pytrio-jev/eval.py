@@ -7,7 +7,7 @@ uv run python eval.py                          # base 模型
 uv run python eval.py --weights <sampler_weights 目录> --calibration outputs/calibration.json
 uv run python eval.py --weights <sampler_weights 目录> --suite typed_decisions
 
-本地版的请求由 localtrio 分发到各 vLLM 副本（默认 GPU1-3），--concurrency 只控制
+本地版的请求由 localtrio 分发到各 vLLM 副本（默认是 GPU0 以外的全部卡，单卡时用 GPU0），--concurrency 只控制
 同时在途的请求数。
 """
 

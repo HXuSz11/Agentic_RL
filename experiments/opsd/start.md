@@ -18,7 +18,7 @@ uv run swanlab login               # 可选；不用 SwanLab 就在训练命令�
 
 ## 1. GPU 布局
 
-不提供任何配置文件时，localtrio 使用内置的 4×A6000 默认布局（与 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 相同），本章直接用它即可：
+不提供任何配置文件时，localtrio 使用内置的 4×A6000 默认布局（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同），本章直接用它即可：
 
 | GPU | 进程 | 作用 |
 | --- | --- | --- |

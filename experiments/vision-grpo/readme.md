@@ -314,7 +314,7 @@ State 权重：/home/<you>/.cache/localtrio/runs/<run_id>/states/vision-grpo-qwe
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 布局 | 默认布局（`configs/4xa6000.yaml`，与内置默认值相同） |
+| GPU 布局 | 默认布局（`configs/4gpu.yaml`，与内置默认值相同） |
 | GPU0（训练） | Qwen3.5-4B bf16 权重（含视觉塔）约 9～10 GB + LoRA / AdamW 约 1～2 GB + 激活，合计约 15～25 GB；图文样本与文本样本一样按 `max_tokens_per_microbatch` 打包（视觉 token 计入长度） |
 | GPU1～3（采样） | 每卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占约 40 GB |
 | 首次启动 | 下载模型约 9～10 GB；加载 4 个引擎约 2～5 分钟 |

@@ -1,6 +1,6 @@
 # Jev 决策模型：本地快速启动
 
-本页是原教程 PyTrio-Jev 快速启动的本地 GPU 版本：训练与推理通过 [localtrio](../../docs/content/guide/localtrio.md) 在 4×RTX A6000 上运行，不需要 `trio login`、API key，也没有计费。原理与原文结果见 [正文](./readme.md)，显存规划见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+本页是原教程 PyTrio-Jev 快速启动的本地 GPU 版本：训练与推理通过 [localtrio](../../docs/content/guide/localtrio.md) 在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。不需要 `trio login`、API key，也没有计费。原理与原文结果见 [正文](./readme.md)，显存规划见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 ## 0. 安装环境
 
@@ -23,15 +23,17 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基
 
 ## 1. GPU 布局
 
-这一章只有一个基模（`Qwen/Qwen3.5-4B`），直接用**内置默认布局**，不需要任何配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+本章不需要 4 张卡：最低 1 张 ≥48GB 或 2 张 ≥24GB（估算），推荐 2 张卡。这一章只有一个基模（`Qwen/Qwen3.5-4B`），直接用**内置默认布局**，不需要任何配置文件，localtrio 按检测到的卡数分配（4 张卡时等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
-| 脚本 | GPU0 | GPU1 / GPU2 / GPU3 |
+| 脚本 | GPU0 | 其余卡（GPU1 起） |
 | --- | --- | --- |
 | `train.py` | LoRA 训练 | 空闲（训练过程不采样） |
-| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 各一个 vLLM 副本 |
+| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 每张卡一个 vLLM 副本 |
 
-- 评测时想把 GPU0 也用上：在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`。
-- 只有一张 48GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`（训练与采样共用 GPU0，速度更慢）。
+- 2 张 ≥48GB 的卡，或更多卡：直接运行。
+- 2 张 24GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/2gpu.yaml`（训练 micro-batch 调到 8192）；vLLM 启动报 KV cache 不足时再设置 `max_model_len`（见第 6 节）。
+- 只有 1 张 ≥48GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`（训练与采样共用 GPU0，vLLM 只占 40% 显存，评测更慢）。
+- 评测时想把 GPU0 也用上：在命令前加 `LOCALTRIO_SAMPLER_GPUS`，按实际卡数写，例如 2 张卡时 `0,1`、4 张卡时 `0,1,2,3`。
 
 ## 2. 准备数据
 
@@ -92,23 +94,23 @@ uv run python eval.py --tag base
 uv run python analysis.py
 ```
 
-评测结果写在 `outputs/eval-<tag>.json`。`--concurrency`（默认 15）只控制同时在途的请求数，localtrio 会把请求分给各个 vLLM 副本；3 个副本时可以调到 32–64 来加速，不影响评测口径。
+评测结果写在 `outputs/eval-<tag>.json`。`--concurrency`（默认 15）只控制同时在途的请求数，localtrio 会把请求分给各个 vLLM 副本；副本多时（例如 4 张卡、3 个副本）可以调到 32–64 来加速，不影响评测口径。
 
 ## 5. 资源估算
 
-> 以下为按模型规模和 token 量推算的**估算值，未实测**。
+> 以下为按模型规模和 token 量推算的**估算值，未实测**；显存按每卡 48GB 写，耗时按 4 张 48GB 卡写。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存（训练） | 约 15–25GB：权重 9–10GB + LoRA/AdamW 约 1–2GB + 激活（梯度检查点） |
-| 采样卡显存 | 每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`） |
-| 训练 270 步 | 约 0.5–1.5 小时（含模型加载；未安装 kernels 会明显更慢） |
-| 校准 + 五项评测 | 合计约十几到几十分钟（3 个 vLLM 副本） |
+| GPU0 显存（训练） | 约 15–25GB：权重 9–10GB + LoRA/AdamW 约 1–2GB + 激活（梯度检查点）；24GB 卡用 micro-batch 8192，约 13–18GB |
+| 采样卡显存 | 每个 vLLM 副本预占 85% 显存（`gpu_memory_utilization=0.85`）：48GB 卡约 40GB，24GB 卡约 20GB |
+| 训练 270 步 | 约 0.5–1.5 小时（只用 GPU0，与卡数无关；含模型加载；未安装 kernels 会明显更慢） |
+| 校准 + 五项评测 | 合计约十几到几十分钟（3 个 vLLM 副本）；2 张卡（1 个副本）约慢 2–3 倍 |
 | 磁盘 | 基模约 9–10GB；每个 LoRA 权重几十到几百 MB |
 
 ## 6. 常见问题
 
-**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/4xa6000.yaml` 再修改），用 `LOCALTRIO_CONFIG` 指向它；也可以把它命名为 `localtrio.yaml` 放在**当前工作目录**（本章是 `experiments/pytrio-jev/`），会被自动读取。例如：
+**怎么改 localtrio 配置？** 写一份自己的 YAML（例如按卡数复制 `configs/2gpu.yaml` 或 `configs/4gpu.yaml` 再修改），用 `LOCALTRIO_CONFIG` 指向它；也可以把它命名为 `localtrio.yaml` 放在**当前工作目录**（本章是 `experiments/pytrio-jev/`），会被自动读取。例如：
 
 ```yaml
 trainer:
@@ -117,8 +119,9 @@ trainer:
   # lora_target_modules: standard  # 仅当 vLLM 报 LoRA 模块不支持时启用（需重新训练）
 models:
   default:
-    gpus: [1, 2, 3]
+    gpus: [1, 2, 3]                 # 按实际卡数写，例如 2 张卡时 [1]
     gpu_memory_utilization: 0.80    # 采样 OOM 时调小（也给 prompt logprobs 的显存尖峰留余量）
+    # max_model_len: 16384          # 24GB 卡上 vLLM 启动报 KV cache 不足时设置
 ```
 
 ```bash

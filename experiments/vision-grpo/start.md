@@ -13,7 +13,7 @@
 | GPU0 | LoRA 训练（transformers + PEFT；视觉塔冻结，只在语言模型上加 LoRA） |
 | GPU1、GPU2、GPU3 | 各一个 vLLM 采样副本（图文输入），每个 step 热加载最新 LoRA |
 
-这个布局与 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 相同。只有一张 48GB 卡时，在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`。更多布局见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+这个布局与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。只有一张 48GB 卡时，在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`。更多布局见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
 
 ## 1. 安装依赖
 
@@ -196,7 +196,7 @@ uv run python experiments/vision-grpo/analysis.py \
 
 **vLLM 报 LoRA 模块不支持**（例如提到 `in_proj_qkv`、`out_proj` 等线性注意力投影）。把 `trainer.lora_target_modules` 改成 `standard`，只在 q/k/v/o + gate/up/down 上加 LoRA。
 
-修改以上配置的方式：复制 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml) 改成自己的文件，再用 `LOCALTRIO_CONFIG` 指定：
+修改以上配置的方式：复制 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 改成自己的文件，再用 `LOCALTRIO_CONFIG` 指定：
 
 ```yaml
 # my-vision.yaml

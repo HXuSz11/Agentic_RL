@@ -116,7 +116,7 @@ optim_step ──► save_weights_and_get_sampling_client()
 不提供配置时使用内置默认布局（GPU0 训练，其余卡做采样）。需要改布局时写一个 YAML，用环境变量 `LOCALTRIO_CONFIG` 指定，或者命名为 `localtrio.yaml` 放在运行脚本时的当前工作目录（会被自动读取）：
 
 ```bash
-LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py
 ```
 
 读取规则：设置了 `LOCALTRIO_CONFIG` 就读它指向的文件，否则读当前工作目录的 `localtrio.yaml`，两者只读一个、不合并；YAML 叠加在内置默认值之上，`trio.configure(...)` 传入的配置项再覆盖 YAML，下面列出的其余 `LOCALTRIO_*` 环境变量最后覆盖。

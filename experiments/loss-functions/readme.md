@@ -10,7 +10,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原系列代码基于 PyTRIO 云端训练服务；本仓库改用 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，训练用 transformers + PEFT LoRA，采样用 vLLM），在 4×RTX A6000（48GB）上运行。本章没有训练代码，第 5 节补充了这三个 loss 在 localtrio 训练端的逐 token 实现。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原系列代码基于 PyTRIO 云端训练服务；本仓库改用 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，训练用 transformers + PEFT LoRA，采样用 vLLM），在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章没有训练代码，不需要 GPU；第 5 节补充了这三个 loss 在 localtrio 训练端的逐 token 实现。后面各章需要几张卡、多大显存，见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。感谢原作者的开源与分享。
 
 - 左边：Importance Sampling。模型走过一串 token，有的选择被奖励，有的选择被惩罚；loss 的工作就是把好选择的概率推高，把坏选择的概率压低。
 - 中间：PPO。模型不能因为一次奖励就猛冲，clip 像限速门，防止一步改太大。
@@ -18,7 +18,7 @@
 
 接下来，我将开启我的强化学习算法分享之路，因为最近在研究强化学习算法，感觉很有趣，似乎找到了最原始的快乐哈哈哈。之前想研究 agent-rl，发现如果用 verl 的话，需要训推一体，然后至少一个 4 卡或者 8 卡的节点，大部分精力都花在照顾 infra 上。
 
-原作者当时用 PyTRIO 云端服务绕开了这些；本地版把这一层换成了 localtrio：实验代码还是同样的 `TrainingClient` / `SamplingClient` 调用，背后是自己机器上的 4 张 A6000——GPU0 跑 LoRA 训练，GPU1～3 各跑一个 vLLM 采样副本，权重同步、checkpoint 都在本地目录里完成。这样就可以潜心研究或者复现当前论文的强化学习算法。
+原作者当时用 PyTRIO 云端服务绕开了这些；本地版把这一层换成了 localtrio：实验代码还是同样的 `TrainingClient` / `SamplingClient` 调用，背后是自己机器上的显卡——GPU 0 跑 LoRA 训练，其余卡各跑一个 vLLM 采样副本（只有 1 张卡时两者共用），权重同步、checkpoint 都在本地目录里完成。不需要专门凑一个 4 卡或 8 卡的节点：1 张 48GB 卡或 2 张 24GB 卡就能跑大部分章节，卡多只是采样更快。这样就可以潜心研究或者复现当前论文的强化学习算法。
 
 所以这个系列会复现 10 篇论文的强化学习算法，代码全部开源，并且都能在本地 GPU 上运行。复现的算法包括但不限于 GRPO、GSPO、DAPO、OPD 等各种变体的 OPD！
 

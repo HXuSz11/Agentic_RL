@@ -7,8 +7,9 @@
 4. 用 boxed answer reward 计算 group-relative advantage；
 5. 用内置 importance_sampling / ppo loss，或 forward_backward_custom 写的 CISPO loss 做一次异步优化提交。
 
-训练（LoRA）跑在 trainer 子进程，采样跑在 vLLM 子进程，默认 GPU0 训练、GPU1-3 采样；
-batch 内的并发请求会被分发到多个 vLLM 副本。其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定。
+训练（LoRA）跑在 trainer 子进程，采样跑在 vLLM 子进程，默认 GPU0 训练、其余每张卡一个采样副本（只有 1 张卡时共用 GPU0）；
+batch 内的并发请求会被分发到各个 vLLM 副本。其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定
+（如 configs/1gpu.yaml、configs/2gpu.yaml）。
 
 小规模试跑（仓库根目录）：
 uv run python experiments/grpo/02-demo-async.py \
@@ -605,7 +606,7 @@ async def main(config: GRPOConfig) -> None:
             f"{len(train_data)} examples once"
         )
 
-    # localtrio 会在本机启动 trainer（默认 GPU0）和 vLLM 采样副本（默认 GPU1-3）子进程，
+    # localtrio 会在本机启动 trainer（默认 GPU0）和 vLLM 采样副本（默认其余每张卡一个，单卡时共用 GPU0）子进程，
     # 首次运行需要下载模型并加载引擎，可能要几分钟。
     print("Creating localtrio clients...")
     service_client = trio.ServiceClient()
@@ -659,7 +660,7 @@ async def main(config: GRPOConfig) -> None:
             n_degenerate = 0
 
             # batch 内每道题的 rollout 彼此独立，可以并发请求 sampler；
-            # localtrio 按 prompt 前缀哈希（affinity）把不同题目分到不同 vLLM 副本（默认 GPU1-3），某个副本的在途请求比最空闲的副本多出 8 个以上时才改走最少负载路由。
+            # localtrio 按 prompt 前缀哈希（affinity）把不同题目分到不同 vLLM 副本（默认 GPU0 以外每张卡一个），某个副本的在途请求比最空闲的副本多出 8 个以上时才改走最少负载路由。
             # 这里先把所有 prompt 的 sample_async 都提交出去，
             # 再用 gather 统一等待结果；gather 会保留输入顺序，方便和 batch_rows 对齐。
             rollout_tasks = [

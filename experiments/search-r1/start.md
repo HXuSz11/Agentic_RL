@@ -18,7 +18,7 @@ uv run swanlab login             # 可选；不记录到云端时给训练命令
 
 ## 2. GPU 布局
 
-本章使用内置默认布局，不需要任何配置文件（等价于 [`configs/4xa6000.yaml`](../../configs/4xa6000.yaml)）：
+本章使用内置默认布局，不需要任何配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
 | GPU | 角色 |
 | --- | --- |
@@ -162,7 +162,7 @@ uv run python experiments/search-r1/analyse.py --preset deepseek-api \
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定，例如：
 
 ```bash
-cp configs/4xa6000.yaml my-search-r1.yaml   # 按下面的说明修改
+cp configs/4gpu.yaml my-search-r1.yaml   # 按下面的说明修改
 LOCALTRIO_CONFIG=my-search-r1.yaml uv run python experiments/search-r1/train.py ...
 ```
 

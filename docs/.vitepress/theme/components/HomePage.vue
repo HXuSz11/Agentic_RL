@@ -32,14 +32,14 @@ async function copyCommands() {
 }
 
 const steps = [
-  { icon: 'layers', where: 'GPU 1–3 · vLLM', title: '采样', text: '每个 prompt 生成一组回答，同时返回逐 token 的 logprob。' },
+  { icon: 'layers', where: '采样卡 · vLLM', title: '采样', text: '每个 prompt 生成一组回答，同时返回逐 token 的 logprob。' },
   { icon: 'spark', where: '训练脚本主进程', title: '打分', text: '规则奖励、裁判模型或环境反馈给出 reward，再算组内优势。' },
-  { icon: 'chip', where: 'GPU 0 · transformers + PEFT', title: '更新', text: 'forward_backward 与 optim_step 更新 LoRA，接口与 PyTRIO 同名同参。' },
+  { icon: 'chip', where: '训练卡 · transformers + PEFT', title: '更新', text: 'forward_backward 与 optim_step 更新 LoRA，接口与 PyTRIO 同名同参。' },
   { icon: 'route', where: 'save_weights_and_get_sampling_client', title: '同步', text: '新 LoRA 写到本地，采样副本热加载，下一步就用上新策略。' },
 ]
 const guides = [
   { href: '/guide/localtrio.html', icon: 'code', title: 'localtrio：本地版 Train API', text: 'forward_backward、optim_step、sample 怎样在本地实现，loss 语义和 PyTRIO 有哪些差异。' },
-  { href: '/guide/hardware.html', icon: 'chip', title: '4×A6000 显存与 GPU 布局', text: '训练卡、采样卡、教师卡怎么分；4B、9B、27B 各要多少显存，OOM 时先调哪个参数。' },
+  { href: '/guide/hardware.html', icon: 'chip', title: '显存与 GPU 布局', text: '1 张、2 张还是 4 张卡？各章最低配置，24GB、48GB、80GB 显卡怎么分工，OOM 时先调哪个参数。' },
   { href: '/guide/learning-path.html', icon: 'route', title: '学习路线', text: '从 Loss Functions 和 GRPO 出发，按目标挑选蒸馏、工具调用或多模态方向。' },
 ]
 </script>
@@ -50,9 +50,9 @@ const guides = [
       <div class="hero-bg" aria-hidden="true" />
       <div class="hero-inner x-width">
         <div class="hero-copy">
-          <p class="hero-pill"><span class="pulse-dot" aria-hidden="true" />本地 GPU 版 · 训练与采样都在自己的卡上</p>
-          <h1>把 {{ chapters.length }} 个 Agentic RL 实验<br>跑在自己的 <span class="hero-gradient">4 张 A6000</span> 上</h1>
-          <p class="hero-lead"><a class="hero-credit" :href="upstreamUrl" target="_blank" rel="noreferrer">Datawhale 原教程</a>依赖 PyTRIO 云端训练服务。这里用 <strong>localtrio</strong> 在本地复刻同名同参的 Train API：transformers + PEFT 训练 LoRA，vLLM 负责采样，每一步自动把新权重交给采样端。</p>
+          <p class="hero-pill"><span class="pulse-dot" aria-hidden="true" />本地 GPU 版 · 1 张卡起步，卡越多越快</p>
+          <h1>把 {{ chapters.length }} 个 Agentic RL 实验<br>跑在<span class="hero-gradient">自己的显卡</span>上</h1>
+          <p class="hero-lead"><a class="hero-credit" :href="upstreamUrl" target="_blank" rel="noreferrer">Datawhale 原教程</a>依赖 PyTRIO 云端训练服务。这里用 <strong>localtrio</strong> 在本地复刻同名同参的 Train API：transformers + PEFT 训练 LoRA，vLLM 负责采样，每一步自动把新权重交给采样端。不用写配置，按本机有几张卡自动分配训练卡和采样卡。</p>
           <div class="hero-actions">
             <a class="x-button primary" :href="withBase(path('/guide/quickstart.html'))">开始第一个实验 <Icon name="arrow" :size="17" /></a>
             <a class="x-button ghost" :href="withBase(path('/experiments/'))">浏览全部实验 <Icon name="book" :size="17" /></a>
@@ -74,7 +74,7 @@ const guides = [
     <section class="stats x-width" aria-label="概览">
       <div><strong>{{ chapters.length }}</strong><span>篇实验笔记</span></div>
       <div><strong>{{ groups.length }}</strong><span>个研究方向</span></div>
-      <div><strong>4×48<small>GB</small></strong><span>RTX A6000 显存</span></div>
+      <div><strong>1<small>张卡起步</small></strong><span>单卡 ≥48GB，或多张 ≥24GB</span></div>
       <div><strong>1</strong><span>套与 PyTRIO 同名同参的 API</span></div>
     </section>
 
@@ -128,7 +128,7 @@ const guides = [
     <section class="cta x-width">
       <div>
         <h2>跑出结果了？</h2>
-        <p>原文的指标来自 PyTRIO 云端，本地数值以你自己的实验记录为准。欢迎把 A6000 上的复现结果、显存数据和踩过的坑提交到仓库。</p>
+        <p>原文的指标来自 PyTRIO 云端，本地数值以你自己的实验记录为准。欢迎把你在自己显卡上的复现结果、显卡型号与显存数据、踩过的坑提交到仓库。</p>
       </div>
       <a class="x-button primary" :href="repoUrl" target="_blank" rel="noreferrer">在 GitHub 参与 <Icon name="diagonal" :size="16" /></a>
     </section>

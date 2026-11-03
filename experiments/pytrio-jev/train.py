@@ -1,6 +1,6 @@
 """判别决策模型的异步 LoRA masked SFT 训练：只在 marker 前一位置监督答案符号。
 
-本地版：通过 localtrio 在自己的 GPU 上训练（默认 GPU0 训练、GPU1-3 采样），
+本地版：通过 localtrio 在自己的 GPU 上训练（默认 GPU0 训练、其余卡采样，单卡时共用），
 不需要登录或 API key。权重保存在
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<weights-name>-step-<N>，
 每次保存都会打印这个本地目录，后续直接传给 inference / calibrate / eval 的 --weights。
@@ -26,8 +26,9 @@ uv run python train.py \
     --swanlab-mode online
 
 
-换基座模型（experiment/weights 名字自动跟随；9B 显存紧张时可改用
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml）：
+换基座模型（experiment/weights 名字自动跟随；9B 在单张 48GB 卡上训练时把 micro-batch
+调到 8192，可用 LOCALTRIO_CONFIG=../../configs/2gpu.yaml；有 4 张卡时也可用
+../../configs/4gpu-big-student.yaml 把训练切到两张卡）：
 uv run python train.py --base-model Qwen/Qwen3.5-9B --epochs 2
 """
 

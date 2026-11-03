@@ -184,7 +184,7 @@ Format 没有到 100% 的主要原因不是模型学不会，而是预算：AIME
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU 布局 | 内置默认布局（即 `configs/4xa6000.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本；沙箱在 CPU |
+| GPU 布局 | 内置默认布局（即 `configs/4gpu.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本；沙箱在 CPU |
 | GPU0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加 LoRA/AdamW 与梯度检查点激活，单条 ≤ 8,192 token 时约 15–25 GB |
 | GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB（`gpu_memory_utilization=0.85`） |
 | CPU | 沙箱默认 8 个并发子进程（`--sandbox-workers`），每段代码最长 30 秒 |

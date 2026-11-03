@@ -14,7 +14,7 @@ uv run python train_sft.py \
     --swanlab-mode online \
 
 训练 9B 时使用双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
-LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_sft.py \
+LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
     --base-model Qwen/Qwen3.5-9B --epochs 2 --run-name spec-o3-sft-9b
 
 默认读取 datasets/sft/sft_train.jsonl 和 datasets/sft/sft_val.jsonl，

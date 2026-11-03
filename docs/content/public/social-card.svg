@@ -23,7 +23,7 @@
 
   <!-- 标题 -->
   <text x="72" y="236" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="60" font-weight="700" fill="#e6ebf0">把 16 个 Agentic RL 实验</text>
-  <text x="72" y="318" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="60" font-weight="700" fill="#e6ebf0">跑在自己的 <tspan fill="url(#ink)">4 张 A6000</tspan> 上</text>
+  <text x="72" y="318" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="60" font-weight="700" fill="#e6ebf0">跑在<tspan fill="url(#ink)">自己的显卡</tspan>上</text>
   <text x="74" y="384" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="25" fill="#a8b3be">localtrio：transformers + PEFT 训练 LoRA，vLLM 采样</text>
   <text x="74" y="424" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="25" fill="#a8b3be">接口与 PyTRIO 同名同参 · GRPO / DAPO / OPD / Agent</text>
 
@@ -54,7 +54,7 @@
     <g transform="translate(828 392)">
       <rect width="276" height="60" rx="12" fill="#10151b" stroke="#232c36"/>
       <rect x="14" y="16" width="62" height="28" rx="7" fill="#74a8ff" fill-opacity=".14"/>
-      <text x="45" y="35" text-anchor="middle" font-size="14" font-weight="600" fill="#74a8ff">GPU 3</text>
+      <text x="45" y="35" text-anchor="middle" font-size="14" font-weight="600" fill="#74a8ff">GPU N</text>
       <text x="92" y="30" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="17" font-weight="700" fill="#e6ebf0">采样 · vLLM</text>
       <rect x="92" y="40" width="168" height="6" rx="3" fill="#1c2530"/><rect x="92" y="40" width="143" height="6" rx="3" fill="#74a8ff"/>
     </g>
@@ -63,5 +63,5 @@
   <!-- 底栏 -->
   <rect x="72" y="514" width="1056" height="1" fill="#2d3742"/>
   <text x="72" y="560" font-family="'IBM Plex Mono','DejaVu Sans Mono',monospace" font-size="20" fill="#8995a2">hxusz11.github.io/Agentic_RL</text>
-  <text x="1128" y="560" text-anchor="end" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="20" fill="#8995a2">16 篇实验 · 4×RTX A6000 · 训练与采样全在本地</text>
+  <text x="1128" y="560" text-anchor="end" font-family="'PingFang SC','Noto Sans SC','WenQuanYi Zen Hei',sans-serif" font-size="20" fill="#8995a2">16 篇实验 · 1 张卡起步 · 训练与采样全在本地</text>
 </svg>

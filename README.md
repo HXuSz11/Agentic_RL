@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/content/public/social-card.png" alt="Agentic RL 本地实战：把 16 个 Agentic RL 实验跑在自己的 4 张 A6000 上" width="100%" />
+<img src="docs/content/public/social-card.png" alt="Agentic RL 本地实战：把 16 个 Agentic RL 实验跑在自己的显卡上" width="100%" />
 
 # Agentic RL 本地实战
 
@@ -47,9 +47,9 @@ uv run python experiments/grpo/01-demo-sync.py --steps 2 --batch-size 4 --group-
 
 | 预设 | 布局 | 用于 |
 | --- | --- | --- |
-| 默认 / [`configs/4xa6000.yaml`](./configs/4xa6000.yaml) | GPU0 训练，GPU1-3 采样 | 除 General OPD 外的全部 4B 章节 |
-| [`configs/4xa6000-opd-27b.yaml`](./configs/4xa6000-opd-27b.yaml) | GPU0 训练，GPU1 学生采样，GPU2-3 27B 教师（TP=2） | General OPD |
-| [`configs/4xa6000-big-student.yaml`](./configs/4xa6000-big-student.yaml) | GPU0-1 训练，GPU2-3 采样 | 9B 学生 |
+| 默认 / [`configs/4gpu.yaml`](./configs/4gpu.yaml) | GPU0 训练，GPU1-3 采样 | 除 General OPD 外的全部 4B 章节 |
+| [`configs/4gpu-opd-27b.yaml`](./configs/4gpu-opd-27b.yaml) | GPU0 训练，GPU1 学生采样，GPU2-3 27B 教师（TP=2） | General OPD |
+| [`configs/4gpu-big-student.yaml`](./configs/4gpu-big-student.yaml) | GPU0-1 训练，GPU2-3 采样 | 9B 学生 |
 | [`configs/1gpu.yaml`](./configs/1gpu.yaml) | 训练与采样共用 GPU0 | 单卡 |
 | [`configs/cpu-debug.yaml`](./configs/cpu-debug.yaml) | CPU + HF 采样 | 代码调试 |
 
