@@ -12,9 +12,9 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
 >
-> 文中“复现结果”一节的表格、曲线和评测数字都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“复现结果”一节的实现差异说明），复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
+> 文中“复现结果”一节的表格、曲线和评测数字都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“复现结果”一节的实现差异说明），复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -356,6 +356,6 @@ GSPO 的思路很直接：保留 GRPO 的 group rollout、reward 和 relative ad
 1. Chujie Zheng et al. [Group Sequence Policy Optimization](https://arxiv.org/abs/2507.18071), 2025.
 2. 本地版代码与运行方式：本目录的 [`train.py`](./train.py)、[`loss.py`](./loss.py) 与 [快速启动指南](./start.md)
 3. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
-4. 原版（PyTRIO）完整代码：[datawhalechina/agentic-rl-lab/experiments/gspo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/gspo)
+4. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/gspo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/gspo)
 5. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)
 6. [原文 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-gspo/runs/o83z2ghp/chart)

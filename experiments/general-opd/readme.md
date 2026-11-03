@@ -10,11 +10,11 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 <https://github.com/datawhalechina/agentic-rl-lab>。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
-> - 原版开源仓库：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)
+> - 原版开源仓库：[Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)
 > - 同步版代码：[01-demo-sync.py](./01-demo-sync.py)
 > - 异步版代码：[02-demo-async.py](./02-demo-async.py)
 > - 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md) / 本文的[本地运行小节](#在本地运行同步版-demo)

@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     # 实验记录。
     parser.add_argument(
-        "--project-name", type=str, default="agentic-rl-lab-spec-o3"
+        "--project-name", type=str, default="agentic-rl-local-spec-o3"
     )
     parser.add_argument("--run-name", type=str, default="spec-o3-sft")
     parser.add_argument(

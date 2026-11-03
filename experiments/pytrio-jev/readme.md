@@ -14,7 +14,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程《PyTrio-Jev》（Jev 决策模型）的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。文中的数值、曲线和截图均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。方法设计、实验与结论来自原作者，感谢原作者和 Datawhale 社区的开源工作，原文见 <https://github.com/datawhalechina/agentic-rl-lab>。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《PyTrio-Jev》（Jev 决策模型）的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。文中的数值、曲线和截图均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。方法设计、实验与结论来自原作者，感谢原作者和 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >

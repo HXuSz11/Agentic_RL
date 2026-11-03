@@ -1,11 +1,11 @@
 ---
-title: 关于本地版 Agentic RL Lab
-description: Datawhale Agentic RL Lab 的本地 GPU 改写版：同样的 16 篇算法笔记，代码通过 localtrio 在自己的 4×A6000 上训练与采样。
+title: 关于 Agentic RL 本地实战
+description: Datawhale 开源 Agentic RL 教程的本地 GPU 改写版：同样的 16 篇算法笔记，代码通过 localtrio 在自己的 4×A6000 上训练与采样。
 ---
 
 # 关于本地版
 
-这是 [Datawhale Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 的**本地 GPU 版本**。原教程用 [PyTRIO](https://pytrio.com) 把模型训练和采样交给云端服务，本地只写数据、奖励和实验循环；这里保留全部算法讲解和实验代码，把“云端那一半”换成了运行在自己显卡上的 [localtrio](./localtrio)。
+这是 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的**本地 GPU 版本**。原教程用 [PyTRIO](https://pytrio.com) 把模型训练和采样交给云端服务，本地只写数据、奖励和实验循环；这里保留全部算法讲解和实验代码，把“云端那一半”换成了运行在自己显卡上的 [localtrio](./localtrio)。
 
 目标硬件是 **4 张 NVIDIA RTX A6000（48GB）**，也提供单卡和 CPU 调试配置。
 

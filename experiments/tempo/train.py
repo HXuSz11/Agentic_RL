@@ -187,7 +187,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--run-name", default="tempo-alfworld-qwen35-4b")
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-tempo")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-tempo")
     parser.add_argument(
         "--swanlab-mode",
         choices=["online", "local", "offline", "disabled"],

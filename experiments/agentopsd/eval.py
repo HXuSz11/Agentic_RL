@@ -143,7 +143,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--swanlab-project",
-        default="agentic-rl-lab-agentopsd",
+        default="agentic-rl-local-agentopsd",
     )
     parser.add_argument(
         "--run-name",

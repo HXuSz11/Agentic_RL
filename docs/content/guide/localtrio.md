@@ -176,7 +176,7 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
 
 - 没有远程控制面：`create_rest_client()` 不可用，checkpoint 就是磁盘上的目录。
 - LoRA rank 允许 1–128（PyTRIO 为 4–64）；vLLM 侧 `max_lora_rank` 默认 64，用更大的 rank 时同步修改 `models.default.max_lora_rank`。vLLM 只接受 1/8/16/32/64/128 等取值，填其他值（如 96）会自动向上取整（→ 128）。
-- **`train_unembed`**：PyTRIO 默认 `True`（输出层也参与训练）。vLLM 0.33 只为纯文本 Qwen3.5 类声明了 `lm_head` LoRA，本 Lab 加载的 Qwen3.5 多模态类没有声明，采样端可能无法加载带 `lm_head` 的 adapter，所以本地默认忽略它。设置 `trainer.allow_unembed: true` 后会以 LoRA 形式训练 `lm_head`（训练端的 logprob 计算已支持），请先确认你的 vLLM 能加载这样的 adapter。这是本地结果与原文可能不同的原因之一。
+- **`train_unembed`**：PyTRIO 默认 `True`（输出层也参与训练）。vLLM 0.33 只为纯文本 Qwen3.5 类声明了 `lm_head` LoRA，本仓库加载的 Qwen3.5 多模态类没有声明，采样端可能无法加载带 `lm_head` 的 adapter，所以本地默认忽略它。设置 `trainer.allow_unembed: true` 后会以 LoRA 形式训练 `lm_head`（训练端的 logprob 计算已支持），请先确认你的 vLLM 能加载这样的 adapter。这是本地结果与原文可能不同的原因之一。
 - **LoRA 缩放**：`lora_alpha` 固定为 32（`trainer.lora_alpha` 可改），缩放系数 `alpha / rank` 随 rank 变化：rank 32 为 1，rank 64（OPSD）为 0.5。PyTRIO 服务端的取值未公开，跨 rank 比较等效学习率时注意这一点。
 - **采样 logprob 口径**：默认返回原始模型分布的 logprob（与训练端一致，ratio 在 on-policy 时≈1）。如果某个实验需要“经过 temperature / top-k 处理后”的 logprob，在配置里设置 `models.default.logprobs_mode: processed_logprobs`；这会让 OPSD 这类在 temperature≠1 下计算 reverse KL 的数值与默认口径不同。
 - 保存时的 `ttl_seconds` 被忽略（本地 checkpoint 不会过期，需要自己清理 `runs/` 目录）。

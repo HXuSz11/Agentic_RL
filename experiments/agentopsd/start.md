@@ -111,7 +111,7 @@ uv run --extra alfworld python experiments/agentopsd/train.py \
     --save-every 40 \
     --seed 42 \
     --run-name agentopsd-alfworld-qwen35-4b \
-    --swanlab-project agentic-rl-lab-agentopsd \
+    --swanlab-project agentic-rl-local-agentopsd \
     --swanlab-mode online
 ```
 

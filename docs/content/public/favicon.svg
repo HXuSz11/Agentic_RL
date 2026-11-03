@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="12" fill="#f8e1da"/><path d="M12 28V13h7.5a5.5 5.5 0 0 1 0 11H12m8-1 7 5" stroke="#86564c" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="29" cy="11" r="3" fill="#fe725c"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- 四张卡：左上为训练卡（实心），其余三张为采样卡 -->
+  <rect width="32" height="32" rx="8" fill="#0f1720"/>
+  <rect x="6.5" y="6.5" width="8.5" height="8.5" rx="2.2" fill="#2ec4a0"/>
+  <rect x="17.5" y="6.5" width="8" height="8" rx="2" stroke="#6fa8ff" stroke-width="1.5"/>
+  <rect x="6.5" y="17.5" width="8" height="8" rx="2" stroke="#6fa8ff" stroke-width="1.5"/>
+  <rect x="17.5" y="17.5" width="8" height="8" rx="2" stroke="#6fa8ff" stroke-width="1.5"/>
+  <circle cx="21.5" cy="21.5" r="1.6" fill="#6fa8ff"/>
+</svg>

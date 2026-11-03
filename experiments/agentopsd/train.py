@@ -283,7 +283,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--swanlab-project",
-        default="agentic-rl-lab-agentopsd",
+        default="agentic-rl-local-agentopsd",
         help="记录实验使用的 SwanLab 项目名称。",
     )
     parser.add_argument(

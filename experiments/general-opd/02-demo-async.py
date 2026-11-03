@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-weights-name", default="opd-deepmath-qwen35-4b-async")
 
     parser.add_argument("--swanlab", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-opd")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-opd")
     parser.add_argument("--swanlab-name", default="opd-deepmath-qwen35-4b-async")
     parser.add_argument("--swanlab-workspace", default=None)
     parser.add_argument(

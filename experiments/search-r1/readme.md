@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索环境不变，仍调用 DeepSeek 官方 Search API 或 Wikipedia。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索环境不变，仍调用 DeepSeek 官方 Search API 或 Wikipedia。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
@@ -868,6 +868,6 @@ Search-R1 看起来像一个复杂的 Agent 训练系统，但拆开以后，它
 
 1. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
 2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
-3. 原版（PyTRIO）教程与代码：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/search-r1`）
+3. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/search-r1`）
 4. [PyTRIO 文档](https://docs.pytrio.cn/)（原版使用）
 5. [SwanLab 文档](https://docs.swanlab.cn/)

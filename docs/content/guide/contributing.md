@@ -1,11 +1,11 @@
 ---
 title: 参与贡献：本地 GPU 版的复现记录与改进
-description: 如何为 Agentic RL Lab 本地 GPU 版提交复现记录、修复章节、改进 localtrio，以及章节结构与质量要求。
+description: 如何为 Agentic RL 本地实战提交复现记录、修复章节、改进 localtrio，以及章节结构与质量要求。
 ---
 
 # 参与贡献
 
-本仓库是 [Datawhale Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 的本地 GPU 改写版。最有价值的贡献是**在真实显卡上跑出来的复现记录**：原文结果来自 PyTRIO 云端，本地版的每一章都需要有人在自己的机器上验证。
+本仓库是 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 改写版。最有价值的贡献是**在真实显卡上跑出来的复现记录**：原文结果来自 PyTRIO 云端，本地版的每一章都需要有人在自己的机器上验证。
 
 新增算法章节、修改原文讲解，建议同时向[上游仓库](https://github.com/datawhalechina/agentic-rl-lab/blob/main/CONTRIBUTING.md)提交，让两边的内容保持一致。
 
@@ -52,4 +52,4 @@ experiments/algorithm-name/
 ## 交流
 
 - 本仓库：[GitHub Issues](https://github.com/HXuSz11/Agentic_RL/issues)
-- 原教程社区：Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab)（微信群见上游 [Issue #13](https://github.com/datawhalechina/agentic-rl-lab/issues/13)）
+- 原教程社区：Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)（微信群见上游 [Issue #13](https://github.com/datawhalechina/agentic-rl-lab/issues/13)）

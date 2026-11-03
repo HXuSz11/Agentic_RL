@@ -12,9 +12,9 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。标题里的“一顿疯狂星期四”沿用原文，指的是原作者在 PyTRIO 云端跑通这次正式训练的花费；本地版把这部分换成了下文的“本地资源估算”。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。标题里的“一顿疯狂星期四”沿用原文，指的是原作者在 PyTRIO 云端跑通这次正式训练的花费；本地版把这部分换成了下文的“本地资源估算”。
 >
-> 文中“复现结果”和“SwanLab 训练记录”两节的数字与曲线都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
+> 文中“复现结果”和“SwanLab 训练记录”两节的数字与曲线都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -723,7 +723,7 @@ Student 先闭卷写出自己真正会写的东西；Teacher 再拿着参考答�
 
 1. 本地版代码：本目录的 [`01-opsd-async.py`](./01-opsd-async.py)、[`01-opsd-sync.py`](./01-opsd-sync.py)、[`00-eval-aime25.py`](./00-eval-aime25.py)，运行方式见 [快速启动指南](./start.md)
 2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
-3. 原版（PyTRIO）完整代码：[datawhalechina/agentic-rl-lab/experiments/opsd](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/opsd)
+3. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/opsd](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/opsd)
 4. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)、[PyTRIO 是什么？——知乎介绍](https://zhuanlan.zhihu.com/p/2063265307226019219)、[PyTRIO On-Policy Distillation 示例](https://docs.pytrio.com/docs/example/opd)、[PyTRIO Skill](https://github.com/SwanHubX/pytrio-skill)
 5. [原文的 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-opsd/runs/pxsnuza4/chart)
 6. [SwanLab 文档](https://docs.swanlab.cn/)

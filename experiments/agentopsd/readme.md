@@ -17,12 +17,12 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000 48GB 上运行，不需要登录，也没有计费。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000 48GB 上运行，不需要登录，也没有计费。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
 
 > **代码与复现资源**
 >
 > - 本地版代码：本目录，入口 [`train.py`](./train.py) / [`eval.py`](./eval.py)，运行命令见 [start.md](./start.md)
-> - 原版代码：[datawhalechina/agentic-rl-lab/experiments/agentopsd](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/agentopsd)
+> - 原版代码：[Datawhale 原教程 · experiments/agentopsd](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/agentopsd)
 > - AgentOPSD 论文：[Fine-Grained Agentic Reinforcement Learning via On-Policy Self-Distillation](https://arxiv.org/abs/2608.05987)
 > - 上游实现：[ZethWang/AgentOPSD](https://github.com/ZethWang/AgentOPSD/tree/0c478b2d7cdc201d9b1f076ec5b3dec7e88a161b)
 > - ALFWorld：[论文](https://arxiv.org/abs/2010.03768) / [官方仓库](https://github.com/alfworld/alfworld)

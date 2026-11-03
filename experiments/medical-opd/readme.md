@@ -12,11 +12,11 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程《OPD 如何增强 LLM 的医疗能力，同时保住通用能力》的本地 GPU 版本。训练代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与 teacher 打分用 vLLM）在 4×RTX A6000（48GB）上运行；评测脚本改为连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要登录、API key，也没有计费。文中所有准确率、结果图与 checkpoint 路径均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。实验设计、SAR-OPD / IDT-OPD 方案与结论来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 <https://github.com/datawhalechina/agentic-rl-lab>。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《OPD 如何增强 LLM 的医疗能力，同时保住通用能力》的本地 GPU 版本。训练代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与 teacher 打分用 vLLM）在 4×RTX A6000（48GB）上运行；评测脚本改为连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要登录、API key，也没有计费。文中所有准确率、结果图与 checkpoint 路径均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。实验设计、SAR-OPD / IDT-OPD 方案与结论来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
-> - 原版开源仓库：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)
+> - 原版开源仓库：[Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)
 > - 本地运行：[快速启动](./start.md) / [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
 > - SwanLab 注册入口：[https://swanlab.cn/login](https://swanlab.cn/login)（训练过程与实验指标记录）
 > - Medical SFT 数据集：[FreedomIntelligence/medical-o1-reasoning-SFT](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
@@ -65,7 +65,7 @@ DeepMath-103K 的版本已经整理成了一份 [通用 OPD 入门教程](../gen
 
 > 说明一下：SAR-OPD 和 IDT-OPD 是我为了描述这两套实验方案使用的名字，并不是已有论文里的标准算法名称。本文复现的是 OPD 的核心训练机制，再在这个基础上探索医疗能力与通用能力的平衡方法。
 
-原版代码在这里：<https://github.com/datawhalechina/agentic-rl-lab>；本地版代码就在本目录（[快速启动](./start.md)）。
+原版代码在这里：[Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)；本地版代码就在本目录（[快速启动](./start.md)）。
 
 ## 先看最终结果
 
@@ -859,7 +859,7 @@ IDT-OPD 则把两个 Teacher 放进同一个训练循环。它没有产生一个
 
 ### 实现与实验工具
 
-1. 本文完整代码：本地版见[本目录](./)；原版见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/medical-opd)
+1. 本文完整代码：本地版见[本目录](./)；原版见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/medical-opd)
 2. 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
 3. PyTRIO 原版文档：[快速开始](https://docs.pytrio.cn/docs) · [Compute Logprobs](https://docs.pytrio.cn/docs/advanced/compute_logprobs) · [自定义 Loss Function](https://docs.pytrio.cn/docs/guide/loss_fn)
 4. SwanLab 文档：[快速开始](https://docs.swanlab.cn/guide_cloud/general/quick-start.html)

@@ -148,7 +148,7 @@ def parse_args() -> GRPOConfig:
         default="online",
         help="SwanLab 记录模式：online 上传到云端，disabled 完全关闭日志",
     )
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-grpo-tashan", help="SwanLab project")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-grpo-tashan", help="SwanLab project")
     args = parser.parse_args()
 
     return GRPOConfig(

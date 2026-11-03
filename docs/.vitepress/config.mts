@@ -3,7 +3,7 @@ import { slug } from 'github-slugger'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { localizedChapters, repoUrl, chapterLink } from '../chapters.mjs'
-import { siteUrl, siteBase } from '../site.mjs'
+import { siteUrl, siteBase, siteName, siteDescription } from '../site.mjs'
 import { addSeo, pageDates } from './seo.mjs'
 import { imageSize, imageHints } from './images.mjs'
 import { rewriteRawMarkdown } from './raw-markdown.mjs'
@@ -81,17 +81,17 @@ function navigation() {
       text: '在 GitHub 上编辑此页',
     },
     notFound: { title: '这页笔记还没找到', quote: '换一个入口，继续探索强化学习。', linkLabel: '返回首页', linkText: '返回首页' },
-    footer: { message: '原教程：Datawhale Agentic RL Lab（Apache-2.0）· 本地 GPU 版：localtrio + transformers + PEFT + vLLM', copyright: '开放代码，记录实验，也记录边界。' },
+    footer: { message: '内容改编自 Datawhale 开源教程（Apache-2.0）· 训练与采样：localtrio + transformers + PEFT + vLLM', copyright: '在自己的显卡上，把论文跑成实验。' },
   }
 }
 
 export default defineConfig({
-  title: 'Agentic RL Lab · Local',
-  description: 'Agentic RL Lab 的本地 GPU 版：用 localtrio（transformers + PEFT + vLLM）在 4×A6000 上复现 GRPO、DAPO、GSPO、OPD、Search-R1、ReTool、ALFWorld 与多模态 Agent。',
+  title: siteName,
+  description: siteDescription,
   lang: 'zh-CN', base: siteBase, srcDir: './content', cleanUrls: false, lastUpdated: false,
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${siteBase}favicon.svg` }],
-    ['meta', { name: 'theme-color', content: '#fdfbf9' }],
+    ['meta', { name: 'theme-color', content: '#ffffff' }],
   ],
   transformPageData: addSeo,
   buildEnd: (siteConfig) => copyRawMarkdown(siteConfig.srcDir, siteConfig.outDir),
@@ -139,7 +139,7 @@ export default defineConfig({
   },
   themeConfig: {
     ...navigation(),
-    logo: { src: '/favicon.svg', width: 30, height: 30 }, siteTitle: 'Agentic RL Lab · Local',
+    logo: { src: '/favicon.svg', width: 30, height: 30 }, siteTitle: siteName,
     socialLinks: [{ icon: 'github', link: repoUrl, ariaLabel: 'GitHub' }],
     search: {
       provider: 'local',

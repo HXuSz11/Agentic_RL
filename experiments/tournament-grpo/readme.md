@@ -15,7 +15,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 默认的梯度严格等于自定义 loss 的梯度，与 PyTRIO SDK 的尺度差异见第 5.5 节）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 默认的梯度严格等于自定义 loss 的梯度，与 PyTRIO SDK 的尺度差异见第 5.5 节）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢 MRLE 与 Datawhale 社区。
 
@@ -398,6 +398,6 @@ Tournament-GRPO 的改动很小，只换了 reward 的来源：
 6. [PyTrio-Jev 章节](../pytrio-jev/readme.md)
 7. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
 8. [localtrio 原理与 API 对照（含 custom loss 语义）](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
-9. 原版（PyTRIO）教程与代码：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/tournament-grpo`，原内容贡献者 [MRLE](https://mrlepro.com)）
+9. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/tournament-grpo`，原内容贡献者 [MRLE](https://mrlepro.com)）
 10. [PyTRIO 文档](https://docs.pytrio.com/docs) / [自定义 loss](https://docs.pytrio.com/docs/guide/custom_loss)（原版使用）
 11. [SwanLab 文档](https://docs.swanlab.cn/)

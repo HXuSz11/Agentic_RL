@@ -12,9 +12,9 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
 >
-> 文中标注“原文在 PyTRIO 上”的数字与经历来自原作者在 PyTRIO 云端的实验；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“先把代码跑起来”一节的实现差异说明），复现结果可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
+> 文中标注“原文在 PyTRIO 上”的数字与经历来自原作者在 PyTRIO 云端的实验；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“先把代码跑起来”一节的实现差异说明），复现结果可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -531,5 +531,5 @@ rollout 会反复补采、反复等待，
 1. 本地版代码：本目录的 [`train.py`](./train.py)、[`rollout.py`](./rollout.py)、[`reward.py`](./reward.py)、[`eval.py`](./eval.py)，运行方式见 [快速启动指南](./start.md)
 2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md)
 3. [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
-4. 原版（PyTRIO）完整代码：[datawhalechina/agentic-rl-lab/experiments/dapo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/dapo)
+4. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/dapo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/dapo)
 5. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)

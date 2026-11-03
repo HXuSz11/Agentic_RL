@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。代码解释器沙箱本来就在本地 CPU 上运行，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。代码解释器沙箱本来就在本地 CPU 上运行，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。标题里的“两杯瑞幸”指原文的云端账单。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
@@ -482,7 +482,7 @@ ReTool 是这个系列里“工程上最省事、味道上最不同”的一篇�
 
 1. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)、[`sandbox.py`](./sandbox.py)，运行步骤见[快速启动指南](./start.md)
 2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
-3. 原版（PyTRIO）教程与代码：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/retool`）
+3. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/retool`）
 4. [PyTRIO 文档](https://docs.pytrio.com/docs) / [PyTRIO 是什么？——知乎介绍](https://zhuanlan.zhihu.com/p/2063265307226019219)（原版使用）
 5. [原文的 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-retool/overview)
 6. [SwanLab 文档](https://docs.swanlab.cn/)

@@ -1,6 +1,6 @@
 # GRPO 快速启动（本地 GPU 版）
 
-> 原理与代码讲解见 [GRPO 正文](./readme.md)。本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本，代码通过 [localtrio](../../docs/content/guide/localtrio.md) 在自己的 GPU 上训练和采样，不需要 `trio login`、API key，也没有计费。
+> 原理与代码讲解见 [GRPO 正文](./readme.md)。本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本，代码通过 [localtrio](../../docs/content/guide/localtrio.md) 在自己的 GPU 上训练和采样，不需要 `trio login`、API key，也没有计费。
 
 以下命令均从仓库根目录运行，Python ≥ 3.12。
 
@@ -84,7 +84,7 @@ uv run python experiments/grpo/02-demo-async.py \
     --swanlab-mode online
 ```
 
-`03-grpo.py` 是只保留 `importance_sampling` / `ppo` 两个内置 loss 的教学版，参数与同步版相同（没有 CISPO 相关参数，默认 SwanLab 项目为 `agentic-rl-lab-grpo-tashan`）。
+`03-grpo.py` 是只保留 `importance_sampling` / `ppo` 两个内置 loss 的教学版，参数与同步版相同（没有 CISPO 相关参数，默认 SwanLab 项目为 `agentic-rl-local-grpo-tashan`）。
 
 比较不同 loss 时，保持其他参数一致，仅修改：
 

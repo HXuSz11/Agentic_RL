@@ -13,7 +13,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文代码基于 PyTRIO 0.2.7 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个支持图文输入的 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的数字与图表来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 0.2.7 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个支持图文输入的 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的数字与图表来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
 
 > **代码与复现资源**
 >
@@ -28,7 +28,7 @@
 
 前八篇里的 prompt 都以文本为主。这次我想把整条 RL 链路推进到多模态：模型先看一张几何图，再读取题目和四个选项，同一道题并发生成一组回答，最后靠可验证的选项奖励完成在线更新。
 
-这套实验最初在单独的实验目录里完成，现在整理成了 `agentic-rl-lab` 的独立章节。数据下载、训练、单模型评测和结果绘图都拆成了单独脚本，读代码时可以沿着一条很清楚的链路往下走。
+这套实验最初在单独的实验目录里完成，后来整理成了原教程的独立章节。数据下载、训练、单模型评测和结果绘图都拆成了单独脚本，读代码时可以沿着一条很清楚的链路往下走。
 
 先看原文的最终结果。在固定的 100 条 GeoQA test 样本上，Qwen3.5-4B 经过 100 steps 的 Vision GRPO 后（**原文在 PyTRIO 上的结果**，本地复现数值可能有差异）：
 

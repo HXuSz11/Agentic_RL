@@ -14,7 +14,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文代码基于 PyTRIO 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的截图与曲线来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的截图与曲线来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
 
 下一篇会写 OPD，也就是 On-Policy Distillation。它和 GRPO 很像，都是拿当前策略自己采样出来的轨迹继续训练；区别是 GRPO 的信号来自 reward，OPD 的信号来自 teacher 对 student 轨迹的评价。这个我们下一篇再详细的解释。
 

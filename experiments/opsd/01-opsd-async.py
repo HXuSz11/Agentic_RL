@@ -174,7 +174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--swanlab", action=argparse.BooleanOptionalAction, default=True
     )
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-opsd")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-opsd")
     parser.add_argument("--swanlab-workspace", default=None)
     parser.add_argument(
         "--swanlab-mode",

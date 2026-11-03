@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
         choices=("online", "local", "offline", "disabled"),
         default="online",
     )
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-vision-grpo")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-vision-grpo")
     parser.add_argument(
         "--experiment-name",
         default="vision-grpo-qwen35-4b-geoqa",

@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
         choices=("online", "local", "offline", "disabled"),
         default="online",
     )
-    parser.add_argument("--swanlab-project", default="agentic-rl-lab-pytrio-jev")
+    parser.add_argument("--swanlab-project", default="agentic-rl-local-pytrio-jev")
     parser.add_argument("--experiment-name", default=None, help="默认跟随 --base-model")
     parser.add_argument("--weights-name", default=None, help="默认跟随 --base-model")
     args = parser.parse_args()

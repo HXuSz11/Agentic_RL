@@ -348,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--project-name", default="agentic-rl-lab-spec-o3")
+    parser.add_argument("--project-name", default="agentic-rl-local-spec-o3")
     parser.add_argument("--run-name", default="spec-o3-rl")
     parser.add_argument(
         "--swanlab-mode",

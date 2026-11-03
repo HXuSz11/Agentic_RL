@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="images/agentic-rl-lab.png" alt="Agentic RL Lab" width="100%" />
+<img src="docs/content/public/social-card.png" alt="Agentic RL 本地实战：把 16 个 Agentic RL 实验跑在自己的 4 张 A6000 上" width="100%" />
 
-# Agentic RL Lab · 本地 GPU 版
+# Agentic RL 本地实战
 
-**把 [Datawhale Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 的 16 篇实验，从 PyTRIO 云端搬到自己的 4×A6000 上。**
+**把 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的 16 篇实验，从 PyTRIO 云端搬到自己的 4×A6000 上。**
 
 📖 在线阅读：<https://hxusz11.github.io/Agentic_RL/>
 
@@ -105,5 +105,5 @@ npm run docs:dev                                                # 本地预览 h
 
 ## 致谢与许可
 
-- 原教程：[Datawhale Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab)，作者 [KMnO4-zx（宋志学）](https://github.com/KMnO4-zx)，内容贡献者 [MRLE](https://github.com/mrle0429)（Tournament-GRPO）。
+- 原教程：Datawhale [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)，作者 [KMnO4-zx（宋志学）](https://github.com/KMnO4-zx)，内容贡献者 [MRLE](https://github.com/mrle0429)（Tournament-GRPO）。
 - 本仓库在 Apache-2.0 许可下修改与再发布，见 [LICENSE](./LICENSE) 与 [NOTICE](./NOTICE)。
