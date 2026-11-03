@@ -1,7 +1,8 @@
 """使用 localtrio（本地 GPU）和本地代码沙箱训练 Qwen3.5-4B ReTool。
 
-训练与采样都在本机运行：默认 GPU0 跑 LoRA 训练（transformers + PEFT），
-GPU1/2/3 各跑一个 vLLM 采样副本；代码沙箱在 CPU 上起子进程执行。
+训练与采样都在本机运行：默认 GPU 0 跑 LoRA 训练（transformers + PEFT），
+其余每张卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用；代码沙箱在 CPU 上起子进程执行。
+不需要 4 张卡：1 张 ≥48GB（LOCALTRIO_CONFIG=configs/1gpu.yaml）或 2 张 ≥24GB 即可。
 checkpoint 保存为本地目录（终端打印完整路径）：
 ~/.cache/localtrio/runs/<run_id>/states/<name>（续训）和
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>（评测）。

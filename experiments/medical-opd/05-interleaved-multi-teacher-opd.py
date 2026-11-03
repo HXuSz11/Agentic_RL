@@ -52,8 +52,8 @@ uv run python 05-interleaved-multi-teacher-opd.py \
 - 两类任务共享一个 TrainingClient、一个 LoRA Student 和同一份 Adam 状态。
 - 正式训练前会在同一个 run 内保存 step000000 state 与 sampler weights。
 - checkpoint 最好保存在完整调度周期结束后：1:1 用 2 的倍数，2:1 用 3 的倍数。
-- 本地版：两个 Teacher 与 Student 都是 Qwen3.5-4B，共用默认采样池（默认 GPU0 训练、
-  GPU1-3 vLLM），不需要额外配置；YOUR_SFT_SAMPLER_WEIGHTS_PATH 是 02-medical-sft.py
+- 本地版：两个 Teacher 与 Student 都是 Qwen3.5-4B，共用默认采样池（默认 GPU 0 训练、
+  其余卡跑 vLLM，单卡时共用），不需要额外配置；YOUR_SFT_SAMPLER_WEIGHTS_PATH 是 02-medical-sft.py
   打印的本地 sampler_weights 目录。
 """
 

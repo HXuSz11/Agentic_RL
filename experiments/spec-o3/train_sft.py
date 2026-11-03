@@ -13,9 +13,10 @@ uv run python train_sft.py \
     --data-dir datasets/sft \
     --swanlab-mode online \
 
-训练 9B 时使用双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
+训练 9B 时，4 张卡用双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
 LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
     --base-model Qwen/Qwen3.5-9B --epochs 2 --run-name spec-o3-sft-9b
+只有 2 张 ≥48GB 的卡时改用 ../../configs/2gpu.yaml（GPU0 训练、GPU1 采样）；24GB 卡放不下 9B。
 
 默认读取 datasets/sft/sft_train.jsonl 和 datasets/sft/sft_val.jsonl，
 每个 epoch 在本地分别保存 state（继续训练）和 sampler（推理评测）两份权重：

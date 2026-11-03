@@ -1,6 +1,6 @@
 # Tournament-GRPO 快速启动
 
-本页是本地 4×RTX A6000（48GB）版的运行手册：策略模型的训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在自己的 GPU 上；搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev）和 RACE 评分模型（DeepSeek）仍是外部 API。算法讲解见 [readme.md](./readme.md)。
+本页是本地 GPU 版的运行手册：策略模型的训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 在你自己的 NVIDIA 显卡上运行（默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用）；搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev）和 RACE 评分模型（DeepSeek）仍是外部 API。算法讲解见 [readme.md](./readme.md)。
 
 以下命令都在**仓库根目录**运行。
 
@@ -18,14 +18,23 @@ uv run swanlab login             # 可选；不记录到云端时给命令加 --
 
 ## 1. GPU 布局
 
-默认使用内置布局，不需要任何配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
+本章只用一个基模，直接使用默认布局，不需要配置文件。localtrio 按检测到的卡数分配：
 
 | GPU | 角色 |
 | --- | --- |
-| GPU0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点；custom loss 先前向、再反向） |
-| GPU1 / GPU2 / GPU3 | 各一个 vLLM 采样副本（data parallel，LoRA 热加载） |
+| GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点；custom loss 先前向、再反向） |
+| 其余每张卡 | 各一个 vLLM 采样副本（data parallel，LoRA 热加载） |
 
-裁判、搜索、网页读取都走外部 API，不占 GPU。想用本机模型当裁判时布局需要调整，见第 6 节。显存与布局的整体说明见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+只有 1 张卡时，训练和采样共用 GPU 0。裁判、搜索、网页读取都走外部 API，不占 GPU；想用本机模型当裁判时布局需要调整，见第 6 节。不需要 4 张卡，本章的最低与推荐配置如下（估算，详见[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 采样速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
+- 本章单条轨迹最长约 2.2 万 token。用 24GB 采样卡或单卡共用时，如果 vLLM 报 KV cache 不足，就设置 `models.default.max_model_len: 32768`（必须大于 rollout 的 `max_model_tokens=25000`）；24GB 训练卡仍 OOM 时，micro-batch 再降到 4096、`logits_chunk_size` 调到 512。写法见第 8 节。
+- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局，用 `uv run python -m localtrio info` 确认。
 
 ## 2. 准备数据
 
@@ -88,7 +97,7 @@ uv run python experiments/tournament-grpo/train.py \
   --run-name tournament-grpo-smoke
 ```
 
-这一步采样 1 道题、8 条轨迹，进行 28 场裁判比较，并更新一次权重。第一次运行还要加载模型、启动 4 个引擎进程，会多花几分钟。运行后检查 `experiments/tournament-grpo/outputs/tournament-grpo-smoke/train.jsonl`：`judge/comparisons` 为 28，`reward/has_answer` 大于 0。
+这一步采样 1 道题、8 条轨迹，进行 28 场裁判比较，并更新一次权重。第一次运行还要加载模型、启动 trainer 和 vLLM 引擎进程（4 张卡时共 4 个），会多花几分钟。运行后检查 `experiments/tournament-grpo/outputs/tournament-grpo-smoke/train.jsonl`：`judge/comparisons` 为 28，`reward/has_answer` 大于 0。
 
 ### 20-step 训练
 
@@ -137,7 +146,7 @@ checkpoint-step-*.json      # 记录 state_path 与 sampler_path
 
 ## 5. Deep Research Bench 评测
 
-`generate` 阶段只启动 vLLM，不启动 trainer；训练结束后可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，用 4 张卡采样。训练进行中不要同时评测。
+`generate` 阶段只启动 vLLM，不启动 trainer；训练结束后可以在命令前把所有卡都列给采样，每张卡各跑一个副本：4 张卡写 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，2 张卡写 `0,1`；只有 1 张卡时写 `LOCALTRIO_SAMPLER_GPUS=0`（不加 `1gpu.yaml`），vLLM 就不再限制在 40% 显存。训练进行中不要同时评测。
 
 先为 Base 和 Step 20 生成研究报告：
 
@@ -179,7 +188,7 @@ experiments/tournament-grpo/outputs/drb/Qwen--Qwen3.5-4B/
 
 默认行为不变：训练裁判是 Jev，RACE 评分是 DeepSeek。如果想用自己的 GPU 跑一个 OpenAI 兼容的裁判，可以用 `python -m localtrio serve` 起 vLLM 服务，再把 `.env` 切到作者原版的 `chat` 协议。
 
-**训练期间**，4 张卡已被训练和采样占满，需要先把采样缩到 GPU1、GPU2，把 GPU3 留给裁判：
+**训练期间**，所有卡都已被训练和采样占满，裁判需要一张不参与训练和采样的空闲卡，一般要 3 张卡以上；只有 1–2 张卡时建议继续用外部 Jev。下面以 4 张卡为例，先把采样缩到 GPU 1、GPU 2，把 GPU 3 留给裁判（3 张卡时就是采样只用 GPU 1、裁判用 GPU 2）：
 
 ```bash
 # 终端 1：GPU3 上启动裁判服务
@@ -191,7 +200,7 @@ LOCALTRIO_SAMPLER_GPUS=1,2 uv run python experiments/tournament-grpo/train.py \
   --run-name tournament-grpo-20step-localjudge
 ```
 
-也可以写进 YAML：复制 `configs/4gpu.yaml`，把 `models.default.gpus` 改成 `[1, 2]`，再用 `LOCALTRIO_CONFIG` 指定。`.env` 改为：
+也可以写进 YAML：4 张卡时复制 `configs/4gpu.yaml`，把 `models.default.gpus` 改成 `[1, 2]`，再用 `LOCALTRIO_CONFIG` 指定。`.env` 改为：
 
 ```dotenv
 TOURNAMENT_JUDGE_BACKEND=chat
@@ -200,9 +209,9 @@ TOURNAMENT_JUDGE_MODEL_NAME=<裁判模型，与 --base-model 相同>
 TOURNAMENT_JUDGE_API_KEY=
 ```
 
-裁判模型的要求：非思考（Instruct）模型，输出里不能夹带推理过程，否则胜者解析会出错；上下文至少能放下 rubric 加两份候选报告（建议 `--max-model-len 32768`）；bf16 权重约 14B 以内，才能在单张 48GB 卡上留出 32K 上下文的 KV cache（估算，未实测）。20B 级模型需要量化，或改成双卡张量并行（例如 `--gpus 2,3 --tp 2`，此时训练采样只留 GPU1：`LOCALTRIO_SAMPLER_GPUS=1`）。作者原版用的是 Qwen2.5-72B-Instruct，单卡放不下。命令里的 `--no-lora` 表示只服务基模，不预留 LoRA 显存。
+裁判模型的要求：非思考（Instruct）模型，输出里不能夹带推理过程，否则胜者解析会出错；上下文至少能放下 rubric 加两份候选报告（建议 `--max-model-len 32768`）；bf16 权重约 14B 以内，才能在单张 48GB 卡上留出 32K 上下文的 KV cache；24GB 卡大约只能放 7B 以内（估算，未实测）。20B 级模型需要量化，或改成双卡张量并行（例如 `--gpus 2,3 --tp 2`，此时训练采样只留 GPU1：`LOCALTRIO_SAMPLER_GPUS=1`）。作者原版用的是 Qwen2.5-72B-Instruct，单卡放不下。命令里的 `--no-lora` 表示只服务基模，不预留 LoRA 显存。
 
-**评测的 RACE 打分**发生在训练结束之后，4 张卡都空闲，可以起更大的评分模型，例如 4 卡张量并行（显存是否够用取决于模型，未实测）。评分模型要选原生上下文 ≥64K 的非思考 Instruct 模型，例如 Qwen3-30B-A3B-Instruct-2507（4 卡张量并行放得下，估算）：
+**评测的 RACE 打分**发生在训练结束之后，所有卡都空闲，可以起更大的评分模型并做张量并行（显存是否够用取决于模型，未实测）。评分模型要选原生上下文 ≥64K 的非思考 Instruct 模型，例如 Qwen3-30B-A3B-Instruct-2507（bf16 权重约 61GB，估算 2 张 48GB 或 4 张 24GB 卡做张量并行即可放下）。下面以 4 张卡为例，2–3 张卡时改成 `--gpus 0,1 --tp 2`；显存合计放不下时继续用 DeepSeek 评分：
 
 ```bash
 uv run python -m localtrio serve --base-model <评分模型> --gpus 0,1,2,3 --tp 4 --port 8001 --max-model-len 65536 --no-lora
@@ -220,29 +229,30 @@ RACE 脚本遇到 `reasoning_content` 会直接报错，同样要用非思考模
 
 ## 7. 资源估算
 
-> 以下为按模型规模和原文记录（20 步训练 4 小时 3 分钟，其中裁判约 2 小时 22 分钟）推算的**粗略估算，未经实测**。裁判、搜索和 Jina 限速都是外部因素。
+> 以下为按模型规模和原文记录（20 步训练 4 小时 3 分钟，其中裁判约 2 小时 22 分钟）推算的**粗略估算，未经实测**；耗时按 4 张 48GB 卡（GPU 0 训练、3 个采样副本）估算。裁判、搜索和 Jina 限速都是外部因素。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU0 训练显存 | 单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），峰值约 15–25 GB（与[硬件规划](../../docs/content/guide/hardware.md)口径一致） |
-| GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB |
+| GPU 0 训练显存 | 单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），峰值约 15–25 GB（与[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)口径一致）；24GB 卡用 micro-batch 8192，仍 OOM 时降到 4096 |
+| 采样卡显存 | 每卡 vLLM 预占 85%：48GB 卡约 40 GB，24GB 卡约 20 GB（报 KV cache 不足时设置 `max_model_len: 32768`）；单卡共用时只占 40% |
 | 单个 step | rollout 约 3–6 分钟 + 裁判约 7 分钟 + 训练约 4–7 分钟 |
 | 20 step | 约 5–7 小时 |
 | 生成 100 份报告 | 约 5–20 分钟 |
+| 卡更少时 | 只有 rollout 随采样卡数变慢（2 张卡约慢 2–3 倍）；裁判和训练时间不变，所以 2 张卡上 20 step 约 6–11 小时，1 张卡更慢 |
 | 外部 API 费用 | 参考原文：训练期 DeepSeek Search 约 17 元 + Jev 约 1 元，RACE 评测约 10 元 |
 
 ## 8. 常见问题
 
-改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定：
+改 localtrio 参数时，复制一份与你卡数对应的预设（`configs/1gpu.yaml` / `2gpu.yaml` / `4gpu.yaml`），再用 `LOCALTRIO_CONFIG` 指定；也可以只写改动的几项，没写 `models.default.gpus` 时仍按卡数自动分配：
 
 ```bash
-cp configs/4gpu.yaml my-tournament.yaml   # 按下面的说明修改
+cp configs/2gpu.yaml my-tournament.yaml   # 换成你卡数对应的预设，按下面的说明修改
 LOCALTRIO_CONFIG=my-tournament.yaml uv run python experiments/tournament-grpo/train.py ...
 ```
 
-**训练卡 OOM**：本章轨迹很长，先确认装了 `kernels` 扩展；再调小 `trainer.max_tokens_per_microbatch`（16384 → 8192）和 `trainer.logits_chunk_size`（1024 → 512）。单条超过上限的轨迹会单独成一个 micro-batch，所以真正决定峰值的是最长那条轨迹。
+**训练卡 OOM**：本章轨迹很长，先确认装了 `kernels` 扩展；再调小 `trainer.max_tokens_per_microbatch`（16384 → 8192，24GB 卡再到 4096；`1gpu.yaml`、`2gpu.yaml`、`24gb.yaml` 已是 8192）和 `trainer.logits_chunk_size`（1024 → 512）。单条超过上限的轨迹会单独成一个 micro-batch，所以真正决定峰值的是最长那条轨迹。
 
-**vLLM 启动失败或采样卡 OOM**：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `models.default.max_model_len: 32768`（必须大于 rollout 的 `max_model_tokens=25000`）。
+**vLLM 启动失败或采样卡 OOM**：报显存不足或 CUDA OOM（多半是同一张卡上还有别的进程）时，调小 `models.default.gpu_memory_utilization`（0.85 → 0.75）；报 KV cache 不足（24GB 卡、单卡共用时常见）时，设置 `models.default.max_model_len: 32768`（必须大于 rollout 的 `max_model_tokens=25000`），这时调小 utilization 只会让 KV cache 更少。
 
 **vLLM 加载 LoRA 时报 target modules 不支持**：把 `trainer.lora_target_modules` 改成 `standard`（只训练 q/k/v/o + MLP），重新训练。
 

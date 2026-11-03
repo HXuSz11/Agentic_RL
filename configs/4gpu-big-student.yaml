@@ -2,7 +2,7 @@
 #   GPU 0,1  : LoRA 训练，权重按层切分到两张卡（device_map=auto）
 #   GPU 2,3  : vLLM 采样，2 个副本
 # 只有 2 张 ≥48GB 的卡时也能跑 9B：直接用 2gpu.yaml（训练单卡、micro-batch 8192）。
-# 24GB 卡跑 9B：训练需要两张卡切分、采样再要一张卡，至少 3 张。
+# 24GB 卡不建议跑 9B：vLLM 在 24GB 卡上放下 9B 权重（约 20GB）后几乎没有 KV cache 空间。
 trainer:
   gpus: [0, 1]
   max_tokens_per_microbatch: 12288

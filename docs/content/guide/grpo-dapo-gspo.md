@@ -19,6 +19,8 @@ description: 对照 GRPO、DAPO 和 GSPO 的优化单位、裁剪、动态采样
 | 值得记录的成本 | loss 选择怎样改变训练行为 | 无效 completion 已经消耗生成时间，补采也有等待成本 | 序列长度、clip fraction 与原始 batch 的归一化口径 |
 | 本仓库的边界 | GSM8K 上的实验与代码 | 当前同步训练循环中的收益和成本 | 核心 loss 与训练链路，未复现论文规模及 MoE 稳定性实验 |
 
+三章都只用一个基模（Qwen3.5-4B），不写配置文件就能在你自己的显卡上运行：最低 1 张 48GB 或 2 张 24GB 卡（估算），推荐 4 张卡；卡少只是采样更慢，组大小、batch 和学习率不用改。DAPO 的长 CoT 训练 OOM 时先调小 `trainer.max_tokens_per_microbatch`，见[显存与 GPU 布局](./hardware#各章最低与推荐配置)。
+
 ## 先看 GRPO：一次更新是怎么发生的？
 
 从 [GRPO 原理与代码实战](/experiments/grpo/) 阅读采样、奖励和更新的连接方式，再用[快速启动](/experiments/grpo/run)跑通代码。遇到 logprob、importance ratio 或 clipping 时，可以回到[损失函数直觉](/experiments/loss-functions/)。

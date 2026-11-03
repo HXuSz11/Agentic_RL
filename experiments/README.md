@@ -2,6 +2,8 @@
 
 以下按约定的阅读顺序排列。每篇文章的正文、代码与图片放在同一个目录中，目录名不带编号。
 
+所有章节都在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。不需要 4 张卡；每章的最低与推荐配置见[显存与 GPU 布局](../docs/content/guide/hardware.md)。
+
 | 顺序 / Order | 实验 / Experiment |
 | --- | --- |
 | 01 | [Loss Functions](./loss-functions/readme.md) |

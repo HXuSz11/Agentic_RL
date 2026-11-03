@@ -14,8 +14,9 @@ uv run python train_rl.py \
     --save-every 50 \
     --swanlab-mode online
 
-从 9B SFT state 开始时使用双卡训练布局：
+从 9B SFT state 开始时，4 张卡用双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
 LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_rl.py --state-path <9B SFT state>
+只有 2 张 ≥48GB 的卡时改用 ../../configs/2gpu.yaml（GPU0 训练、GPU1 采样）；24GB 卡放不下 9B。
 """
 
 import argparse

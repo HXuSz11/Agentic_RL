@@ -131,7 +131,7 @@ uv run python experiments/grpo/01-demo-sync.py \
 | 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与 vLLM 共卡，vLLM 占 40%） | 约 1/3～1/4 |
-| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
 | 4 张（推荐） | 直接运行，与 `configs/4gpu.yaml` 相同；3 张、8 张卡也直接运行，采样副本数跟着卡数变 | 基准 |
 
 | 项目 | 估算 |
@@ -139,7 +139,7 @@ uv run python experiments/grpo/01-demo-sync.py \
 | GPU 0（训练） | Qwen3.5-4B bf16 权重约 9～10 GB + LoRA / AdamW 状态约 1～2 GB + 激活（梯度检查点，单个 micro-batch ≤16k token），合计约 15～25 GB；24GB 卡把 micro-batch 调到 8192，约 13～18 GB |
 | 其余卡（采样） | 每张卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占 85% 显存（权重之外都是 KV cache）：48GB 卡约 40 GB，24GB 卡约 20 GB |
 | 首次启动 | 下载模型约 9～10 GB；各引擎进程加载 + vLLM 编译 / CUDA graph 捕获，约 2～5 分钟 |
-| 每个 step | 按 4 张 48GB 卡估算，`batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定每个副本都用上），会更快。2 张卡约慢 2～3 倍 |
+| 每个 step | 按 4 张 48GB 卡估算，`batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定每个副本都用上），会更快 |
 | 10 步试跑 | 按 4 张卡估算，连同启动约 10～25 分钟 |
 | 磁盘 | 每份 sampler 权重（rank 32 LoRA，bf16）几十到几百 MB，训练中的临时权重默认保留最近 4 份（仍被 SamplingClient 引用的会多留） |
 

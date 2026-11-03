@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000 48GB 上运行，不需要登录，也没有计费。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行，不需要登录，也没有计费。默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章最低 1 张 48GB 或 2 张 24GB 卡，推荐 4 张（见第 5 节）。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
 
 > **代码与复现资源**
 >
@@ -21,7 +21,7 @@
 > - ALFWorld 论文：[ALFWorld: Aligning Text and Embodied Environments for Interactive Learning](https://arxiv.org/abs/2010.03768)
 > - ALFWorld 官方实现：[alfworld/alfworld](https://github.com/alfworld/alfworld)
 > - SwanLab：[ALFWorld 完整训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-alfworld/runs)（原文在 PyTRIO 上的训练）
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局（1 张、2 张还是 4 张卡）](../../docs/content/guide/hardware.md)
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第八篇。
 
@@ -36,7 +36,7 @@
 - 单条完整训练序列的上限从过去常见的 4K～8K 提高到了 **12K tokens**；
 - 每个训练 update 包含 **8 个游戏**，每个游戏采样 **8 条独立轨迹**，一共 **64 条长轨迹**。
 
-代价也很直接。长轨迹让每一轮采样都要重新读入越来越长的历史，原文在 PyTRIO 上的这次正式训练是系列写到这一篇时最贵的一次；换到本地，同样意味着 4 张 A6000 要连续跑上十几个小时（估算，见第 5 节）。
+代价也很直接。长轨迹让每一轮采样都要重新读入越来越长的历史，原文在 PyTRIO 上的这次正式训练是系列写到这一篇时最贵的一次；换到本地，按 4 张 48GB 卡估算也要连续跑上十几个小时，卡更少时相应更久（估算，见第 5 节）。
 
 好消息是，这些算力确实换来了可见的提升。先看原文在 PyTRIO 上的结果：80 steps 之后，固定 274 个游戏上的总体成功率从 `52.92%` 提高到 `56.93%`，Valid Unseen 从 `52.99%` 提高到 `58.96%`，同时平均非法动作数从 `5.41` 降到了 `4.81`。
 
@@ -166,7 +166,7 @@ TextWorld / PDDL 执行动作并更新状态
 
 ## 2. 如何启动训练和评估
 
-下面的命令都从仓库根目录运行，完整步骤（含输出位置、资源估算与常见问题）见 [start.md](./start.md)。本地版的所有计算都在本机完成：GPU 0 训练 LoRA，GPU 1–3 跑 vLLM 采样，TextWorld 环境跑在 CPU 上。使用默认布局，不需要配置文件。ALFWorld 通过可选依赖安装，其他章节执行 `uv sync` 时不需要下载 TextWorld 环境。
+下面的命令都从仓库根目录运行，完整步骤（含输出位置、资源估算与常见问题）见 [start.md](./start.md)。本地版的所有计算都在本机完成：GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本（只有 1 张卡时共用），TextWorld 环境跑在 CPU 上。通常直接用默认布局，不需要配置文件；1 张卡或 24GB 卡的跑法见第 5 节。ALFWorld 通过可选依赖安装，其他章节执行 `uv sync` 时不需要下载 TextWorld 环境。
 
 ### 安装依赖并下载 ALFWorld 数据
 
@@ -266,7 +266,7 @@ Qwen3.5-4B 分别完成 8 条完整工具轨迹
 
 ![ALFWorld 与 PyTRIO 训练闭环](<./images/ALFWorld × PyTRIO · Training Loop.png>)
 
-*原文的训练闭环示意图。本地版的数据流完全相同，图中由 PyTRIO 远端承担的采样与训练，换成了 localtrio 的 vLLM 采样副本（GPU 1–3）和 LoRA trainer（GPU 0）。*
+*原文的训练闭环示意图。本地版的数据流完全相同，图中由 PyTRIO 远端承担的采样与训练，换成了 localtrio 的 LoRA trainer（GPU 0）和 vLLM 采样副本（其余卡）。*
 
 ### 1. 每条轨迹只计算一个 episode return
 
@@ -396,19 +396,28 @@ prefilling 远高于 train 和 sample。原因就藏在 Agent 循环里：每执
 
 ### 本地资源估算
 
-> 以下是按模型规模、上面的 token 用量和 A6000 算力做的**粗略估算，未经实测**，实际耗时取决于软件版本、CPU 性能和轨迹长度分布。
+> 以下是按模型规模、上面的 token 用量和 48GB 显卡（Ampere 架构）算力做的**粗略估算，未经实测**，实际耗时取决于显卡型号、软件版本、CPU 性能和轨迹长度分布。
+
+不要求 4 张卡：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=configs/1gpu.yaml` | 约慢 3～4 倍 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml` | 约慢 2～3 倍 |
+| 4 张（推荐） | 不写配置：GPU 0 训练，GPU 1–3 各一个 vLLM 副本 | 基准 |
+
+24GB 的采样卡还要设置 `max_model_len: 16384`。下表按 4 张 48GB 卡估算：
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 布局 | 默认布局，无需配置：GPU 0 训练，GPU 1–3 各一个 vLLM 副本 |
-| GPU 0 显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 12K token 单条轨迹的激活，峰值约 20～35GB |
-| GPU 1–3 显存 | 每卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外用作 KV cache |
+| 训练卡（GPU 0）显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 12K token 单条轨迹的激活，峰值约 20～35GB |
+| 采样卡显存 | 每卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外用作 KV cache |
 | 单个 update | rollout 约 3～8 分钟，训练（约 78 万 token）约 5～8 分钟 |
 | 80-step 正式训练 | 约 10～20 小时（原文在 PyTRIO 上约 12 小时） |
 | 一次完整评测 | 274 局约 0.5～1.5 小时 |
 | CPU | 每个 update 同时持有 64 个 TextWorld 子进程，建议 8 核以上、32GB 以上内存；核数少时环境步进会成为瓶颈 |
 
-OOM 时该调哪些参数、如何换成单卡布局，见 [start.md](./start.md) 的常见问题。
+OOM 时该调哪些参数、少卡或 24GB 卡怎么设置，见 [start.md](./start.md) 的资源估算与常见问题。
 
 原文的完整训练过程记录在 [SwanLab](https://swanlab.cn/@kmno4/llm-agent-rl-lab-alfworld/runs)。下面分别是原文在 PyTRIO 上训练的 reward 与 trainer 指标，本地训练会记录同名指标：
 

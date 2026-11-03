@@ -4,7 +4,7 @@
 
 # Agentic RL 本地实战
 
-**把 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的 16 篇实验，从 PyTRIO 云端搬到自己的 4×A6000 上。**
+**把 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的 16 篇实验，从 PyTRIO 云端搬到你自己的本地显卡上：1 张 48GB 或 2 张 24GB 卡起步，卡越多越快。**
 
 📖 在线阅读：<https://hxusz11.github.io/Agentic_RL/>
 
@@ -20,11 +20,13 @@
 - **checkpoint**：本地目录、标准 PEFT 格式，可直接 `vllm serve`、合并导出。
 
 ```text
-GPU0  训练（transformers + PEFT）
-GPU1  vLLM 采样副本 #1  ┐
-GPU2  vLLM 采样副本 #2  ├ 同一基模的所有 LoRA（学生各 step、SFT 教师）共用
-GPU3  vLLM 采样副本 #3  ┘
+GPU 0  训练（transformers + PEFT）
+GPU 1  vLLM 采样副本 #1  ┐
+GPU 2  vLLM 采样副本 #2  ├ 其余每张卡一个副本；同一基模的所有 LoRA（学生各 step、SFT 教师）共用
+ …                       ┘
 ```
+
+不写配置文件时，localtrio 按检测到的卡数自动这样分配；只有 1 张卡时训练和采样共用 GPU 0。**不要求 4 张卡**：2 张 24GB 卡或 1 张 48GB 卡就能跑大部分章节，卡多只是采样更快。显卡需要 Ampere 或更新的架构（bf16），每张卡最好 ≥24GB；各章的最低与推荐配置见[显存与 GPU 布局](./docs/content/guide/hardware.md)。
 
 ## 快速开始
 
@@ -39,21 +41,26 @@ uv run python experiments/grpo/01-demo-sync.py --steps 2 --batch-size 4 --group-
     --max-tokens 512 --swanlab-mode disabled
 ```
 
+上面的命令不需要配置文件，GPU 按卡数自动分配。只有 1 张 ≥48GB 的卡时，建议在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`；24GB 卡（2 张或更多）时加 `LOCALTRIO_CONFIG=configs/24gb.yaml`。
+
 需要 Linux x86_64 和 NVIDIA 驱动 ≥ 580（`uv.lock` 锁定的 torch 2.14 / vLLM 0.33 基于 CUDA 13.0）。`uv sync` 默认精确同步，会卸载这次命令没写上的 extra：之后再装 dev / alfworld 时把 kernels 一起写上（如 `uv sync --extra kernels --extra alfworld`），或者加 `--inexact`，详见[安装说明](./docs/content/guide/quickstart.md#获取代码与安装依赖)。
 
-更多：[安装与第一个实验](./docs/content/guide/quickstart.md) · [localtrio 原理与 API 对照](./docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](./docs/content/guide/hardware.md)
+更多：[安装与第一个实验](./docs/content/guide/quickstart.md) · [localtrio 原理与 API 对照](./docs/content/guide/localtrio.md) · [需要几张卡：显存与 GPU 布局](./docs/content/guide/hardware.md)
 
 ## GPU 布局预设
 
 | 预设 | 布局 | 用于 |
 | --- | --- | --- |
-| 默认 / [`configs/4gpu.yaml`](./configs/4gpu.yaml) | GPU0 训练，GPU1-3 采样 | 除 General OPD 外的全部 4B 章节 |
-| [`configs/4gpu-opd-27b.yaml`](./configs/4gpu-opd-27b.yaml) | GPU0 训练，GPU1 学生采样，GPU2-3 27B 教师（TP=2） | General OPD |
-| [`configs/4gpu-big-student.yaml`](./configs/4gpu-big-student.yaml) | GPU0-1 训练，GPU2-3 采样 | 9B 学生 |
-| [`configs/1gpu.yaml`](./configs/1gpu.yaml) | 训练与采样共用 GPU0 | 单卡 |
+| 不写配置（默认） | 按卡数自动：GPU 0 训练，其余每张卡一个采样副本；单卡时共用 | 4B 学生、单一基模的章节（除 General OPD 外的全部章节）；任意卡数，单卡需 ≥48GB |
+| [`configs/1gpu.yaml`](./configs/1gpu.yaml) | 训练与采样共用 GPU 0（vLLM 40%），需 ≥48GB | 只有 1 张卡 |
+| [`configs/2gpu.yaml`](./configs/2gpu.yaml) | GPU 0 训练（micro-batch 8192），GPU 1 采样 | 固定只用前 2 张卡（如 9B 学生用 2 张 48GB 卡） |
+| [`configs/24gb.yaml`](./configs/24gb.yaml) | 按卡数自动分配，训练 micro-batch 8192 | 24GB 显卡（RTX 3090 / 4090），2 张或更多 |
+| [`configs/4gpu.yaml`](./configs/4gpu.yaml) | GPU 0 训练，GPU 1–3 采样 | 与 4 张卡时的自动布局相同，只是把取值写明方便修改 |
+| [`configs/4gpu-big-student.yaml`](./configs/4gpu-big-student.yaml) | GPU 0–1 训练，GPU 2–3 采样 | 9B 学生的宽裕布局；2 张 ≥48GB 卡用 `2gpu.yaml` 也能跑 |
+| [`configs/4gpu-opd-27b.yaml`](./configs/4gpu-opd-27b.yaml) | GPU 0 训练，GPU 1 学生采样，GPU 2–3 27B 教师（TP=2），每卡 ≥48GB | General OPD 的 27B 教师；卡少时换 9B 教师，最低 2 张 48GB 卡，YAML 写法见章节 |
 | [`configs/cpu-debug.yaml`](./configs/cpu-debug.yaml) | CPU + HF 采样 | 代码调试 |
 
-用法：`LOCALTRIO_CONFIG=configs/<预设>.yaml uv run python ...`
+用法：`LOCALTRIO_CONFIG=configs/<预设>.yaml uv run python ...`；只改分工也可以用环境变量，如 `LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2`。`uv run python -m localtrio info` 显示当前布局。
 
 ## 实验目录
 
@@ -98,7 +105,7 @@ npm run docs:dev                                                # 本地预览 h
 
 ## 已知边界
 
-- localtrio 的训练数学、采样/训练 logprob 一致性、checkpoint 与图文输入在 CPU 微型模型上有测试；**vLLM 后端与各章完整训练尚未在真实 A6000 上实测**，各章“本地资源估算”均为估算值。
+- localtrio 的训练数学、采样/训练 logprob 一致性、checkpoint 与图文输入在 CPU 微型模型上有测试；**vLLM 后端与各章完整训练尚未在真实显卡上实测**，各章“本地资源估算”均为按模型尺寸推算的估算值（多数以 4 张 48GB 卡为例，并注明卡少时的差别）。
 - 原文的实验结果与图表来自 PyTRIO 云端，保留并注明来源；本地复现数值可能不同。
 - PyTRIO 服务端的数值实现不公开，localtrio 按文档语义复现（loss 归一化口径见 [localtrio 指南](./docs/content/guide/localtrio.md#loss-语义)）。
 - 网站目前只有中文版。

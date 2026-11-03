@@ -1,9 +1,9 @@
 """在 text-only ALFWorld 上训练逐步决策策略（本地 GPU 版）。
 
 原文基于 PyTRIO 云端训练；这里通过 localtrio（与 PyTRIO 同名同参）在本地 GPU
-上运行：trainer 进程（默认 GPU 0）负责 LoRA 训练，vLLM 采样副本（默认 GPU 1-3）
-负责 rollout，TextWorld 环境在 CPU 上运行。checkpoint 保存在
-``$LOCALTRIO_HOME/runs/<run_id>/``（默认 ``~/.cache/localtrio``）。
+上运行：trainer 进程（默认 GPU 0）负责 LoRA 训练，vLLM 采样副本（默认其余每张卡
+一个；只有 1 张卡时与训练共用 GPU 0）负责 rollout，TextWorld 环境在 CPU 上运行。
+checkpoint 保存在 ``$LOCALTRIO_HOME/runs/<run_id>/``（默认 ``~/.cache/localtrio``）。
 
 先下载环境数据，再从本目录启动一次最小训练：
 

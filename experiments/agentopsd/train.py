@@ -1,8 +1,8 @@
 """使用内置 PPO 在纯文本 ALFWorld 上训练 AgentOPSD（本地 GPU 版）。
 
 原文基于 PyTRIO 云端训练；这里通过 localtrio（与 PyTRIO 同名同参）在本地 GPU
-上运行：trainer 进程（默认 GPU 0）负责 LoRA 的 forward / backward / optimizer，
-vLLM 采样副本（默认 GPU 1-3）负责 Student rollout 与 Self-Teacher 复评。
+上运行：trainer 进程（默认 GPU 0）负责 LoRA 的 forward / backward / optimizer，vLLM 采样
+副本（默认其余每张卡各一个，单卡时与 trainer 共用 GPU 0）负责 Student rollout 与 Self-Teacher 复评。
 checkpoint 保存在 ``$LOCALTRIO_HOME/runs/<run_id>/``（默认 ``~/.cache/localtrio``）。
 
 下载 ALFWorld 数据后，在当前目录运行：

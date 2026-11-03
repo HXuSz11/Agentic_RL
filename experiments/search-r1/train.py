@@ -1,8 +1,9 @@
 """使用 localtrio（本地 GPU）和可切换搜索后端训练 Qwen3.5-4B Search-R1。
 
-训练与采样都在本机运行：默认 GPU0 跑 LoRA 训练（transformers + PEFT），
-GPU1/2/3 各跑一个 vLLM 采样副本；布局见 configs/4gpu.yaml，
-用 `uv run python -m localtrio info` 查看。checkpoint 保存为本地目录：
+训练与采样都在本机运行：默认 GPU 0 跑 LoRA 训练（transformers + PEFT），
+其余每张卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用；不需要 4 张卡，
+1 张 ≥48GB（LOCALTRIO_CONFIG=configs/1gpu.yaml）或 2 张 ≥24GB 即可，
+用 `uv run python -m localtrio info` 查看布局。checkpoint 保存为本地目录：
 ~/.cache/localtrio/runs/<run_id>/states/<name>（续训）和
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>（评测），终端会打印完整路径。
 

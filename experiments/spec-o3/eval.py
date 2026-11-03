@@ -22,9 +22,11 @@ uv run python eval.py \
 
 --model-path 是 train_sft.py / train_rl.py 终端打印的 sampler_path，即本地目录
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>。
-评测只启动 vLLM，不启动 trainer：训练结束后可用 LOCALTRIO_SAMPLER_GPUS=0,1,2,3 用满 4 张卡。
-27B 级基模单张 48GB 卡放不下，需要在 localtrio.yaml 里设
-models.default: {gpus: [0, 1, 2, 3], tensor_parallel_size: 2}（4 张卡组成 2 个 TP=2 副本）。
+评测只启动 vLLM，不启动 trainer：训练结束后可用 LOCALTRIO_SAMPLER_GPUS 把所有卡都用来采样
+（例如 4 张卡写 0,1,2,3，2 张卡写 0,1）。
+27B 级基模（bf16 权重约 54GB）单张 48GB 卡放不下，需要在 localtrio.yaml 里设
+tensor_parallel_size: 2，例如 4 张 48GB 卡时 models.default: {gpus: [0, 1, 2, 3],
+tensor_parallel_size: 2}（组成 2 个 TP=2 副本），2 张时 gpus: [0, 1]；80GB 卡单卡即可。
 
 默认使用 datasets/rl/bench_dev.jsonl；输出分类指标、完整轨迹和工具图片。
 --base-model 默认 Qwen/Qwen3.5-4B，必须与 sampler 权重的基模一致。

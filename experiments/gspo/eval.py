@@ -12,8 +12,8 @@ uv run python eval.py \
     --model-path ~/.cache/localtrio/runs/RUN_ID/sampler_weights/WEIGHTS_NAME \
     --output eval-results/aime25-gspo-stepxx.jsonl
 
-评测只启动 vLLM 采样副本，不加载 trainer；训练结束后可以用
-``LOCALTRIO_SAMPLER_GPUS=0,1,2,3`` 让 4 张卡都参与评测。
+评测只启动 vLLM 采样副本，不加载 trainer；训练结束后可以用 ``LOCALTRIO_SAMPLER_GPUS``
+把所有卡都列给采样（例如 4 张卡写 ``0,1,2,3``，2 张卡写 ``0,1``）。
 """
 
 from __future__ import annotations

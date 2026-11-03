@@ -1,6 +1,6 @@
 # Medical OPD：本地快速启动
 
-本页是原教程 Medical OPD 快速启动的本地 GPU 版本：训练通过 [localtrio](../../docs/content/guide/localtrio.md) 在 4×RTX A6000 上运行，评测连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要 `trio login`、API key，也没有计费。实验设计与原文结果见 [正文](./readme.md)，显存规划见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+本页是原教程 Medical OPD 快速启动的本地 GPU 版本：训练通过 [localtrio](../../docs/content/guide/localtrio.md) 在你自己的 NVIDIA 显卡上运行（默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用），评测连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要 `trio login`、API key，也没有计费。实验设计与原文结果见 [正文](./readme.md)，显存规划见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 以下命令均从**仓库根目录**运行。
 
@@ -23,14 +23,23 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基
 
 ## 1. GPU 布局
 
-Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，所有训练脚本都用**内置默认布局**，不需要 `LOCALTRIO_CONFIG`（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
+Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，所有训练脚本都用**内置默认布局**，不需要 `LOCALTRIO_CONFIG`。localtrio 按检测到的卡数分配：
 
 | GPU | 用途 |
 | --- | --- |
-| GPU0 | LoRA 训练（transformers + PEFT）；一个 trainer 进程可以同时托管多个 LoRA run |
-| GPU1、GPU2、GPU3 | 各一个 vLLM 副本：Student 采样、Teacher `compute_logprobs`，按请求热加载不同 LoRA |
+| GPU 0 | LoRA 训练（transformers + PEFT）；一个 trainer 进程可以同时托管多个 LoRA run |
+| 其余每张卡 | 各一个 vLLM 副本：Student 采样、Teacher `compute_logprobs`，按请求热加载不同 LoRA |
 
-想在训练的同时评测之前的 checkpoint，可以让训练只用两张采样卡，把 GPU3 留给评测服务：在训练命令前加 `LOCALTRIO_SAMPLER_GPUS=1,2`，评测服务用 `--gpus 3`。
+只有 1 张卡时，训练和采样共用 GPU 0。Teacher 复用采样副本，不需要额外的卡，也不需要 4 张卡。本章的最低与推荐配置如下（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | OPD 速度（相对 4 卡） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
+- 24GB 卡：vLLM 报 KV cache 不足时，复制一份 `configs/24gb.yaml`，去掉其中 `max_model_len: 16384` 的注释，再用 `LOCALTRIO_CONFIG` 指向它。
+- 想在训练的同时评测之前的 checkpoint，需要留一张卡给评测服务。例如 4 张卡时在训练命令前加 `LOCALTRIO_SAMPLER_GPUS=1,2`，评测服务用 `--gpus 3`；卡少时建议训练结束后再评测。
 
 ## 2. 下载数据
 
@@ -130,7 +139,7 @@ uv run python experiments/medical-opd/05-interleaved-multi-teacher-opd.py \
 
 ## 6. 评测
 
-先在一个终端启动本地 OpenAI 兼容服务（vLLM，GPU1，端口 8000）：
+先在一个终端启动本地 OpenAI 兼容服务（vLLM，GPU 1，端口 8000；只有 1 张卡时先结束训练，改成 `--gpus 0`）：
 
 ```bash
 uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --gpus 1 --port 8000 --max-model-len 16384
@@ -150,19 +159,19 @@ uv run python experiments/medical-opd/01-eval-medical.py --model "$WEIGHTS" --ma
 uv run python experiments/medical-opd/01-eval-ceval.py   --model "$WEIGHTS" --max-tokens 8192 --concurrency 16
 ```
 
-也可以在启动服务时注册固定名字，评测时传名字：`--lora sar300=<目录>` → `--model sar300`。想并行评测两个基准，可以在 GPU2 上再起一个 `--port 8001` 的服务，并给第二个评测加 `--base-url http://127.0.0.1:8001/v1`。
+也可以在启动服务时注册固定名字，评测时传名字：`--lora sar300=<目录>` → `--model sar300`。想并行评测两个基准，可以在另一张空闲的卡（如 GPU 2）上再起一个 `--port 8001` 的服务，并给第二个评测加 `--base-url http://127.0.0.1:8001/v1`。
 
 逐题结果与汇总指标写入 `experiments/medical-opd/eval-results/`（`medical_eval_<模型名>.jsonl` / `.metrics.json`、`ceval_eval_<模型名>.jsonl` / `.metrics.json`）。`analysis.py` 画的是原文的硬编码结果，复现后可以改成自己的数值，并用 `--output-dir` 输出到别处，避免覆盖文章引用的原图。
 
 ## 7. 资源估算
 
-> 以下为按模型规模和 token 量推算的**估算值，未实测**。
+> 以下为按模型规模和 token 量推算的**估算值，未实测**。耗时按 4 张 48GB 卡估算：2 张卡时 OPD 约慢 2–3 倍；SFT 只用训练卡，基本不受卡数影响。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存（训练） | 峰值约 20–30GB（4B 权重 9–10GB + LoRA/AdamW + 梯度检查点下的激活） |
-| GPU1–3 显存（采样） | 每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`） |
-| 评测服务 | 单卡预占约 43GB（`localtrio serve` 默认 `gpu_memory_utilization=0.9`） |
+| GPU 0 显存（训练） | 峰值约 20–30GB（4B 权重 9–10GB + LoRA/AdamW + 梯度检查点下的激活）；24GB 卡用 micro-batch 8192（`configs/24gb.yaml` 已调好） |
+| 采样卡显存 | 每个 vLLM 副本预占每卡 85%（`gpu_memory_utilization=0.85`）：48GB 卡约 40GB，24GB 卡约 20GB |
+| 评测服务 | 单卡预占 90%（`localtrio serve` 默认 `gpu_memory_utilization=0.9`）：48GB 卡约 43GB，24GB 卡约 22GB |
 | Medical SFT | 每步约 10–25 秒；总步数 = 3 × ⌈样本数 / 16⌉（启动时打印） |
 | Medical OPD / Base-anchor OPD（各 300 步） | 每步约 1–1.5 分钟，各约 5–8 小时 |
 | IDT-OPD（600 步） | 约 10–16 小时 |
@@ -171,7 +180,7 @@ uv run python experiments/medical-opd/01-eval-ceval.py   --model "$WEIGHTS" --ma
 
 ## 8. 常见问题
 
-**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/4gpu.yaml` 修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
+**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制和你卡数对应的 `configs/2gpu.yaml` 或 `configs/4gpu.yaml`，修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
 
 ```yaml
 trainer:
@@ -180,7 +189,7 @@ trainer:
   lora_target_modules: standard     # vLLM 报 LoRA 模块不支持时改用
 models:
   default:
-    gpus: [1, 2, 3]
+    gpus: [1, 2, 3]                 # 4 张卡的写法；2 张卡写 [1]
     gpu_memory_utilization: 0.80    # 采样 OOM 时调小
     max_num_seqs: 128
 ```

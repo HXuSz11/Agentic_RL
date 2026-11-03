@@ -45,7 +45,7 @@ uv run python 04-ceval-opd-async.py \
 - `--max-tokens 2048` 是训练 rollout 的 completion 预算，不是 C-Eval 评测预算。
 - 本地版：YOUR_MEDICAL_OPD_TRAIN_STATE_PATH 是 03 脚本打印的 state 目录，形如
   ~/.cache/localtrio/runs/<run_id>/states/<name>-step000300（不是 sampler_weights）。
-  base teacher 与 student 同基模，共用默认采样池（默认 GPU0 训练、GPU1-3 vLLM）。
+  base teacher 与 student 同基模，共用默认采样池（默认 GPU 0 训练、其余卡跑 vLLM，单卡时共用）。
 """
 
 from __future__ import annotations

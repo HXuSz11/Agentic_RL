@@ -2,7 +2,7 @@
 
 按顺序完成：安装环境（可选：预下载基模）→ 确认 GPU 布局 → 下载数据 → SFT 冷启动 → GRPO → 评测。
 
-本页是本地 4×RTX A6000（48GB）版：SFT、GRPO 与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在自己的 GPU 上（图文输入走 `ImageChunk`），光谱绘图工具在本机 CPU 上运行。原理与原文结果见 [readme.md](./readme.md)，原文公开的训练曲线见 [SwanLab](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)。
+本页是本地 GPU 版：SFT、GRPO 与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在你自己的 NVIDIA 显卡上（图文输入走 `ImageChunk`），光谱绘图工具在本机 CPU 上运行。不要求 4 张卡，最低配置见第 2 节。原理与原文结果见 [readme.md](./readme.md)，原文公开的训练曲线见 [SwanLab](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)。
 
 ## 1. 安装环境
 
@@ -25,18 +25,19 @@ uv run swanlab login             # 可选；训练命令改用 --swanlab-mode di
 
 ## 2. GPU 布局
 
-| 基模 | 预设 | GPU0 | GPU1 | GPU2 | GPU3 |
-| --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B | 默认，不需要配置文件（即 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
-| Qwen3.5-9B | [`configs/4gpu-big-student.yaml`](../../configs/4gpu-big-student.yaml) | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
+不写配置文件时，localtrio 按检测到的卡数自动分工：GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。按自己的卡选预设，后面的 SFT / RL 命令前照表加上（在本目录下运行；速度相对 4 卡估算）：
 
-在本目录下使用 9B 预设时，命令前加：
+| 基模 | 你的卡 | 命令前加 | 分工 |
+| --- | --- | --- | --- |
+| Qwen3.5-4B | 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`，或不加 | 训练与采样共用 GPU0（vLLM 占 40%），约慢 3～4 倍 |
+| Qwen3.5-4B | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
+| Qwen3.5-4B | 4 张（推荐） | 不加（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同） | GPU0 训练，GPU1–3 采样 |
+| Qwen3.5-9B | 2 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/2gpu.yaml` | GPU0 训练（micro-batch 8192），GPU1 采样 |
+| Qwen3.5-9B | 4 张 ≥48GB（推荐） | `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（[预设](../../configs/4gpu-big-student.yaml)） | GPU0–1 训练（按层切分），GPU2–3 采样 |
 
-```bash
-LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml
-```
+24GB 卡放不下 9B；24GB 的采样卡跑 4B 时还要设置 `models.default.max_model_len: 20480`（见第 9 节）。
 
-用 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python -m localtrio info` 确认生效。评测只需要 vLLM，4B 和 9B 都可以用默认布局。显存与布局的整体说明见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+用 `LOCALTRIO_CONFIG=<预设> uv run python -m localtrio info` 确认生效。评测只需要 vLLM，4B 和 9B 都可以用默认布局。显存与布局的整体说明见 [硬件规划](../../docs/content/guide/hardware.md)。
 
 ## 3. 下载并整理数据
 
@@ -83,7 +84,7 @@ uv run python train_sft.py \
 
 **保存好 epoch 2 的两个路径**（也可以在 `~/.cache/localtrio/runs/` 下按 run 名找到）。目录根可用 `LOCALTRIO_HOME` 改到大容量磁盘；引擎日志在 `~/.cache/localtrio/logs/`。
 
-训练 9B 时使用双卡训练布局和独立的 `--run-name`：
+训练 9B 时使用独立的 `--run-name`，4 张卡用双卡训练布局（下例）；只有 2 张 48GB 卡时把配置换成 `../../configs/2gpu.yaml`：
 
 ```bash
 LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
@@ -126,11 +127,11 @@ uv run python train_rl.py \
 - `--max-tokens` 是单轮生成上限；`--max-seq-len` 包含文字、图片和工具历史。`--max-turns 8` 包含最终回答这一轮。
 - 整批 Datum 一次交给 `forward_backward`，localtrio 的 trainer 按 `trainer.max_tokens_per_microbatch` 自动拆 micro-batch 并累积梯度，无需设置 mini batch。
 - 从 SFT 接 RL 默认使用新的优化器。继续已有 RL 训练时，可换成 RL 的 `state_path` 并加 `--resume-optimizer`；它会恢复优化器状态，但脚本仍从新一轮数据遍历开始，不恢复之前的样本位置。
-- 要训练 3 个 epoch，改为 `--epochs 3`。9B 传入 9B SFT 的 `state_path`，命令前加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`；4B 与 9B 使用各自的 `--run-name`。
+- 要训练 3 个 epoch，改为 `--epochs 3`。9B 传入 9B SFT 的 `state_path`，命令前加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（只有 2 张 48GB 卡时用 `../../configs/2gpu.yaml`）；4B 与 9B 使用各自的 `--run-name`。
 
 ## 6. 评测 Base、SFT 和 RL
 
-评测只启动 vLLM，不启动 trainer；训练进行中不要同时评测。训练结束后，可以在下面每条命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，用 4 张卡采样。
+评测只启动 vLLM，不启动 trainer；训练进行中不要同时评测。训练结束后，可以在下面每条命令前加 `LOCALTRIO_SAMPLER_GPUS`，让所有卡都采样（例如 4 张卡写 `0,1,2,3`，2 张卡写 `0,1`）。
 
 下面的命令统一使用 6,144 token 的单轮上限和 16,384 token 的总上下文上限，默认评测 `datasets/rl/bench_dev.jsonl` 中的 256 条样本。
 
@@ -211,13 +212,13 @@ uv run python analysis.py
 
 ## 8. 资源估算
 
-> 以下数字按模型规模和原文记录的 token 用量（SFT 约 6.11M train token；4B RL epoch 1 约 239M prefilling / 79M train / 26M sample token）推算，是**粗略估算，未经实测**。
+> 以下数字按模型规模和原文记录的 token 用量（SFT 约 6.11M train token；4B RL epoch 1 约 239M prefilling / 79M train / 26M sample token）推算，是**粗略估算，未经实测**。显存和时间以每卡 48GB、4 张卡（4B 默认布局，9B 用 `4gpu-big-student.yaml`）为例；2 张卡约慢 2～3 倍，1 张卡约慢 3～4 倍。最低与推荐配置见第 2 节。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| 4B 训练卡（GPU0）显存 | 约 20–30 GB（单条 16,384 token、含图片） |
-| 9B 训练（GPU0+1）显存 | 每卡约 15–25 GB |
-| 采样卡显存 | 每卡 vLLM 预占约 40 GB |
+| 4B 训练卡（GPU0）显存 | 约 20–30 GB（单条 16,384 token、含图片）；24GB 卡用 micro-batch 8192（`configs/24gb.yaml` 已设好） |
+| 9B 训练显存 | 双卡（GPU0+1）时每卡约 15–25 GB；2 张卡时单卡训练，需要 48GB 卡 |
+| 采样卡显存 | 每卡 vLLM 预占显存的 85%（48GB 卡约 40 GB） |
 | 4B SFT 2 epoch（424 step） | 约 1–2 小时 |
 | 4B RL 1 epoch（389 个 rollout batch） | 约 1.5–3 天 |
 | 9B RL 1 epoch | 约为 4B 的 2 倍或更多 |
@@ -228,13 +229,13 @@ uv run python analysis.py
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定（路径相对于当前目录）：
 
 ```bash
-cp ../../configs/4gpu.yaml my-spec-o3.yaml   # 9B 则复制 4gpu-big-student.yaml
+cp ../../configs/4gpu.yaml my-spec-o3.yaml   # 按第 2 节选：1gpu / 2gpu / 4gpu / 4gpu-big-student（9B）
 LOCALTRIO_CONFIG=my-spec-o3.yaml uv run python train_rl.py ...
 ```
 
-**训练卡 OOM**：调小 `trainer.max_tokens_per_microbatch`（4B 默认 16384 → 8192；9B 预设 12288 → 8192），必要时再调小 `trainer.logits_chunk_size`（1024 → 512）。单条超长样本会单独成一个 micro-batch，图片 token 也计入长度。
+**训练卡 OOM**：调小 `trainer.max_tokens_per_microbatch`（4B 默认 16384 → 8192，24GB 卡仍 OOM 时 → 4096；9B 预设 12288 → 8192），必要时再调小 `trainer.logits_chunk_size`（1024 → 512）。单条超长样本会单独成一个 micro-batch，图片 token 也计入长度。
 
-**vLLM 启动失败或采样卡 OOM**：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `models.default.max_model_len: 20480`（需大于 `--max-seq-len` 16384）。
+**vLLM 启动失败或采样卡 OOM**：同卡还有别的进程、报可用显存不足时，调小 `models.default.gpu_memory_utilization`（0.85 → 0.75）；报 KV cache 放不下 `max_model_len`（24GB 卡上常见）时，设置 `models.default.max_model_len: 20480`（需大于 `--max-seq-len` 16384）。
 
 **长上下文采样慢（可选提速）**：localtrio 默认 `models.default.max_num_batched_tokens: 2048`，是偏保守的预填充分块；本章只做生成，可以调到 8192 加快多轮图文长 prompt 的预填充，代价是 KV cache 略少。
 

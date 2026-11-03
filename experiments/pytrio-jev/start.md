@@ -30,8 +30,8 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基
 | `train.py` | LoRA 训练 | 空闲（训练过程不采样） |
 | `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 每张卡一个 vLLM 副本 |
 
-- 2 张 ≥48GB 的卡，或更多卡：直接运行。
-- 2 张 24GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/2gpu.yaml`（训练 micro-batch 调到 8192）；vLLM 启动报 KV cache 不足时再设置 `max_model_len`（见第 6 节）。
+- 2 张及以上、每卡 ≥32GB：直接运行。
+- 24GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml`（训练 micro-batch 调到 8192，GPU 仍按卡数自动分配）；vLLM 启动报 KV cache 不足时再设置 `max_model_len`（见第 6 节）。
 - 只有 1 张 ≥48GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`（训练与采样共用 GPU0，vLLM 只占 40% 显存，评测更慢）。
 - 评测时想把 GPU0 也用上：在命令前加 `LOCALTRIO_SAMPLER_GPUS`，按实际卡数写，例如 2 张卡时 `0,1`、4 张卡时 `0,1,2,3`。
 

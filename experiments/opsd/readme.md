@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。标题里的“一顿疯狂星期四”沿用原文，指的是原作者在 PyTRIO 云端跑通这次正式训练的花费；本地版把这部分换成了下文的“本地资源估算”。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。1 张 ≥48GB 或 2 张 ≥24GB 的卡就能跑，卡越多越快（见下文“本地资源估算”）。不需要 `trio login`、API Key，也没有计费。标题里的“一顿疯狂星期四”沿用原文，指的是原作者在 PyTRIO 云端跑通这次正式训练的花费；本地版把这部分换成了下文的“本地资源估算”。
 >
 > 文中“复现结果”和“SwanLab 训练记录”两节的数字与曲线都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
@@ -23,7 +23,7 @@
 > - SwanLab 训练记录：[原文完整实验曲线（PyTRIO）](https://swanlab.cn/@kmno4/llm-agent-rl-lab-opsd/runs/pxsnuza4/chart)
 > - OPSD 论文：[Self-Distilled Reasoner: On-Policy Self-Distillation for Large Language Models](https://arxiv.org/abs/2601.18734)
 > - OPSD 官方实现：[siyan-zhao/OPSD](https://github.com/siyan-zhao/OPSD)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第四篇。
 
@@ -42,7 +42,7 @@
 
 原作者此前已经用 PyTRIO 跑过 GRPO、OPD 和 Search-R1，对这套开发方式并不陌生。这一次他真正想验证的是：面对一篇刚发布不久的 OPSD，能不能继续把时间集中在双 prompt、Teacher logprob 和 sampled-token loss 这些算法问题上。最后从读论文、写代码，到跑完 100 step、评测 Base Model 和 4 个 checkpoint、画出结果，整个过程没有超过两天。
 
-本地版沿用同一套代码：Student 的 LoRA 训练在 GPU0 上，Student 采样和固定 Teacher 的 logprob 打分共用 GPU1/2/3 上的 vLLM 副本。本地没有计费，训练与评测的 GPU 占用和耗时估算见下文“本地资源估算”一节。
+本地版沿用同一套代码：Student 的 LoRA 训练在 GPU0 上，Student 采样和固定 Teacher 的 logprob 打分共用其余卡上的 vLLM 副本（只有 1 张卡时都在 GPU0 上）。本地没有计费，训练与评测的 GPU 占用和耗时估算见下文“本地资源估算”一节。
 
 ## 复现结果（原文在 PyTRIO 上的结果）
 
@@ -282,9 +282,9 @@ checkpoint 与恢复
 
 这些框架并不是不好。相反，它们非常适合有固定 GPU 集群、需要深入控制分布式执行的团队。
 
-原文的做法是把模型计算全部交给 PyTRIO 云端，本地机器只跑 Python 控制逻辑（原文 SwanLab 元数据记录的是一台 `Apple M4` 的 MacBook Air）。本地版换成了自己的 4×A6000，但保留了同一套接口和分工，实验代码的调用方式一行没变，只是服务端换成了本机上的 localtrio 子进程：
+原文的做法是把模型计算全部交给 PyTRIO 云端，本地机器只跑 Python 控制逻辑（原文 SwanLab 元数据记录的是一台 `Apple M4` 的 MacBook Air）。本地版换成了自己的显卡，但保留了同一套接口和分工，实验代码的调用方式一行没变，只是服务端换成了本机上的 localtrio 子进程：
 
-| 主进程（实验代码）负责 | trainer 子进程（GPU0）负责 | vLLM 采样副本（GPU1/2/3）负责 |
+| 主进程（实验代码）负责 | trainer 子进程（GPU0）负责 | vLLM 采样副本（其余每张卡一个）负责 |
 | --- | --- | --- |
 | 下载和读取数据 | Student LoRA forward / backward | Student sampling（每步热加载最新 LoRA） |
 | 构造 Student / Teacher prompt | 梯度累积与 optimizer step | Teacher logprob（同一基模，不挂 LoRA） |
@@ -292,9 +292,9 @@ checkpoint 与恢复
 | 计算 reverse KL 和 advantage | | |
 | SwanLab 记录与实验分析 | | |
 
-对照上面那份清单，localtrio 已经替你处理了三件事：**训练权重与推理权重同步**（每步把 LoRA 写到 `~/.cache/localtrio/runs/<run_id>/` 下，vLLM 按路径热加载，不重启引擎）、**多卡资源调度**（默认 GPU0 训练、GPU1/2/3 采样，也可以换 `configs/` 里的预设）、**checkpoint 与恢复**（`save_state` 写本地目录，可以用 `create_training_client_from_state_with_optimizer` 连同 AdamW 状态一起恢复，`create_training_client_from_state` 只恢复 LoRA 权重）。你仍然需要自己准备的是 CUDA 驱动和 `uv sync` 装好的 PyTorch / vLLM 环境。
+对照上面那份清单，localtrio 已经替你处理了三件事：**训练权重与推理权重同步**（每步把 LoRA 写到 `~/.cache/localtrio/runs/<run_id>/` 下，vLLM 按路径热加载，不重启引擎）、**多卡资源调度**（默认 GPU0 训练、其余卡采样，只有 1 张卡时共用；也可以换 `configs/` 里的预设）、**checkpoint 与恢复**（`save_state` 写本地目录，可以用 `create_training_client_from_state_with_optimizer` 连同 AdamW 状态一起恢复，`create_training_client_from_state` 只恢复 LoRA 权重）。你仍然需要自己准备的是 CUDA 驱动和 `uv sync` 装好的 PyTorch / vLLM 环境。
 
-原文在 PyTRIO 上 100 个 step 的 `time/step_elapsed_time` 累计约 `7,540.6` 秒，也就是约 `2 小时 6 分钟`（不含数据准备和完整 AIME25 评测）。本地的耗时取决于 4 张 A6000 的吞吐，估算见下文“本地资源估算”一节。
+原文在 PyTRIO 上 100 个 step 的 `time/step_elapsed_time` 累计约 `7,540.6` 秒，也就是约 `2 小时 6 分钟`（不含数据准备和完整 AIME25 评测）。本地的耗时取决于你的显卡数量和吞吐，估算见下文“本地资源估算”一节。
 
 不论服务端在云上还是在本机，这套接口真正节省的都是前面的环境时间，让你可以直接把精力放在这些问题上：
 
@@ -380,7 +380,7 @@ Student 和 Teacher 都从 `Qwen/Qwen3.5-4B` 开始。
 
 固定 Teacher 很重要。否则 Teacher 和 Student 一起更新，监督目标也会不断移动，训练更容易不稳定。
 
-在本地版里，`teacher_client` 和 Student sampler 指向同一个基模，所以它们共用 GPU1/2/3 上的同一组 vLLM 副本：Student 请求带上当前 LoRA，Teacher 请求不带 LoRA。不需要为 Teacher 额外配置 GPU，也不会多加载一份模型。
+在本地版里，`teacher_client` 和 Student sampler 指向同一个基模，所以它们共用同一组 vLLM 副本（默认 GPU0 以外每张卡一个）：Student 请求带上当前 LoRA，Teacher 请求不带 LoRA。不需要为 Teacher 额外配置 GPU，也不会多加载一份模型。
 
 ## 第三步：让 Student 先生成 on-policy 轨迹
 
@@ -496,7 +496,7 @@ OPSD 一道题至少需要两类采样端请求：
 1. Student sample；
 2. Teacher compute logprobs。
 
-如果 32 道题完全串行执行，大量时间会浪费在逐个等待请求上：vLLM 同一时刻只处理一条序列，连续批处理和 3 个采样副本都用不起来。
+如果 32 道题完全串行执行，大量时间会浪费在逐个等待请求上：vLLM 同一时刻只处理一条序列，连续批处理和多个采样副本都用不起来。
 
 异步版在单题内部先完成 Student→Teacher 的依赖，再在题目之间并发：
 
@@ -565,18 +565,26 @@ advantage = -(student_logprob - teacher_logprob)
 
 ## 本地资源估算（估算，未实测）
 
-默认布局不需要任何配置文件（等价于 `configs/4gpu.yaml`），固定 Teacher 与 Student 共用采样副本：
+默认布局不需要任何配置文件：GPU0 训练，其余每张卡一个 vLLM 副本，只有 1 张卡时共用；固定 Teacher 与 Student 共用采样副本，不需要额外的卡。
+
+| 你的卡 | 怎么跑 |
+| --- | --- |
+| 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU0 |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡用 `LOCALTRIO_CONFIG=configs/24gb.yaml` |
+| 4 张（推荐） | 直接运行（与 `configs/4gpu.yaml` 相同）；3 张、8 张也直接运行 |
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 64 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 2～3GB，加上激活常规约 15～25GB（其中 lm_head 分块 logprob 约 1～3GB，`logits_chunk_size=1024`，按总 token 数分块，与 micro-batch 内序列数无关；OOM 时先调小 `max_tokens_per_microbatch`，见快速启动的常见问题） |
-| GPU1/2/3 | 3 个 vLLM 副本：Student 采样（挂 LoRA）+ Teacher logprob（不挂 LoRA） | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 64 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 2～3GB，加上激活常规约 15～25GB（其中 lm_head 分块 logprob 约 1～3GB，`logits_chunk_size=1024`，按总 token 数分块，与 micro-batch 内序列数无关；24GB 卡或 OOM 时调小 `max_tokens_per_microbatch` 到 8192，见快速启动的常见问题） |
+| 其余每张卡 | 一个 vLLM 副本：Student 采样（挂 LoRA）+ Teacher logprob（不挂 LoRA） | 每卡按 `gpu_memory_utilization=0.85` 预分配 85%（48GB 卡约 40GB，24GB 卡约 20GB；权重 + KV cache） |
+
+下面以 4 张 48GB 卡（3 个采样副本）为例估算，其他卡数的换算见本节末尾。
 
 **训练**（每步 32 道题 × 1 条 completion，上限 1,024 token）的数量级：
 
-- Student 采样：一个 wave，耗时由最长 completion 决定。A6000 显存带宽约 768GB/s，4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，按单条序列 40～60 token/s 估计，1,024 token 约 20～30 秒。
+- Student 采样：一个 wave，耗时由最长 completion 决定。以显存带宽约 768GB/s 的 48GB 卡为例，4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，按单条序列 40～60 token/s 估计，1,024 token 约 20～30 秒。
 - Teacher 打分：每题一次 `compute_logprobs`，是带参考解答的长 prompt 的 prefill，计算密集但不需要逐 token 解码，估计数秒到十几秒。
-- 训练：内置 `importance_sampling` 的一次前向 + 反向（含梯度检查点重算）约 6 × 参数量 FLOPs/token，4B 模型约 24 GFLOP/token；每步约 3 万～4 万 token，约 1 PFLOP，按 A6000 实际 40～60 TFLOPS 估计约 15～30 秒。
+- 训练：内置 `importance_sampling` 的一次前向 + 反向（含梯度检查点重算）约 6 × 参数量 FLOPs/token，4B 模型约 24 GFLOP/token；每步约 3 万～4 万 token，约 1 PFLOP，按单卡实际 40～60 TFLOPS 估计约 15～30 秒。
 - 合计每步约 1～1.5 分钟，100 steps 约 1.5～2.5 小时，不含首次下载模型和启动 vLLM 的时间。
 
 **评测**比训练更重。每个模型状态是 30 道题 × 每题 12 次采样 = 360 条 completion，`max_tokens=38,912`，生成预算上限是：
@@ -585,9 +593,11 @@ advantage = -(student_logprob - teacher_logprob)
 30 × 12 × 38,912 = 14,008,320 tokens
 ```
 
-`14.01M` 是上限，模型通常会在达到 `max_tokens` 前生成 EOS；原文在 PyTRIO 上记录到每次评测实际生成约 `3.40M～3.86M` tokens。按这个量级，3 个 vLLM 副本合计每秒数千 token 的吞吐估计，每次评测约 20～40 分钟，其中最长那条回答（最长可达 38,912 token，单条序列解码约 10～16 分钟）决定了下限；Base + 4 个 checkpoint 共 5 次评测约 2～3.5 小时。训练结束后可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 让 4 张卡都参与评测。
+`14.01M` 是上限，模型通常会在达到 `max_tokens` 前生成 EOS；原文在 PyTRIO 上记录到每次评测实际生成约 `3.40M～3.86M` tokens。按这个量级，3 个 vLLM 副本合计每秒数千 token 的吞吐估计，每次评测约 20～40 分钟，其中最长那条回答（最长可达 38,912 token，单条序列解码约 10～16 分钟）决定了下限；Base + 4 个 checkpoint 共 5 次评测约 2～3.5 小时。训练结束后可以把所有卡都列进 `LOCALTRIO_SAMPLER_GPUS`（如 `0,1,2,3`），让 GPU0 也参与评测。
 
-以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_elapsed_time` 为准，更完整的显存规划见 [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)。
+**卡更少时**：训练每步主要等一轮采样和一次更新，副本数影响不大，2 张卡约慢 1.2～1.5 倍，1 张卡约慢 1.5～2 倍；评测吞吐随副本数近似线性，2 张卡（训练结束后两卡都评测）约慢 1.5～2 倍，1 张卡约慢 3 倍。显卡更快（如 80GB 的 A100 / H100）时各项都会更短。
+
+以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_elapsed_time` 为准，更完整的显存规划见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 ## 如何运行这次复现？
 
@@ -598,7 +608,7 @@ advantage = -(student_logprob - teacher_logprob)
 ```bash
 # 在仓库根目录
 uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练加速 kernel，推荐安装
-uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU0 训练，GPU1/2/3 采样
+uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU0 训练，其余卡采样（单卡时共用）
 uv run swanlab login               # 可选；不用 SwanLab 时训练命令改成 --swanlab-mode disabled
 ```
 
@@ -703,7 +713,7 @@ Student 先闭卷写出自己真正会写的东西；Teacher 再拿着参考答�
 完整实验记录
 ```
 
-如果按照官方多卡训练栈从头准备，这两天很可能还在处理 CUDA、FlashAttention、rollout engine 和权重同步。原作者用 PyTRIO 把这段时间真正花在了 Student / Teacher prompt、token 对齐、advantage 和 on-policy 边界上；本地版用 localtrio 在 4×A6000 上保留了同一套接口，训练与推理的权重同步、GPU 分配都交给它处理，注意力同样可以留在这些算法细节上。
+如果按照官方多卡训练栈从头准备，这两天很可能还在处理 CUDA、FlashAttention、rollout engine 和权重同步。原作者用 PyTRIO 把这段时间真正花在了 Student / Teacher prompt、token 对齐、advantage 和 on-policy 边界上；本地版用 localtrio 在自己的显卡上保留了同一套接口，训练与推理的权重同步、GPU 分配都交给它处理，注意力同样可以留在这些算法细节上。
 
 ## 参考资料
 
@@ -722,7 +732,7 @@ Student 先闭卷写出自己真正会写的东西；Teacher 再拿着参考答�
 ### 本文实现
 
 1. 本地版代码：本目录的 [`01-opsd-async.py`](./01-opsd-async.py)、[`01-opsd-sync.py`](./01-opsd-sync.py)、[`00-eval-aime25.py`](./00-eval-aime25.py)，运行方式见 [快速启动指南](./start.md)
-2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
+2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 3. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/opsd](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/opsd)
 4. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)、[PyTRIO 是什么？——知乎介绍](https://zhuanlan.zhihu.com/p/2063265307226019219)、[PyTRIO On-Policy Distillation 示例](https://docs.pytrio.com/docs/example/opd)、[PyTRIO Skill](https://github.com/SwanHubX/pytrio-skill)
 5. [原文的 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-opsd/runs/pxsnuza4/chart)

@@ -1,6 +1,6 @@
 # Search-R1 快速启动
 
-本页是本地 4×RTX A6000（48GB）版的运行手册：训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在自己的 GPU 上，搜索仍调用 DeepSeek 官方 Search API 或 Wikipedia。算法讲解见 [readme.md](./readme.md)。
+本页是本地 GPU 版的运行手册：训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 在你自己的 NVIDIA 显卡上运行（默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用），搜索仍调用 DeepSeek 官方 Search API 或 Wikipedia。算法讲解见 [readme.md](./readme.md)。
 
 以下命令均从**仓库根目录**运行。
 
@@ -18,14 +18,23 @@ uv run swanlab login             # 可选；不记录到云端时给训练命令
 
 ## 2. GPU 布局
 
-本章使用内置默认布局，不需要任何配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
+本章只用一个基模，直接使用默认布局，不需要配置文件。localtrio 按检测到的卡数分配：
 
 | GPU | 角色 |
 | --- | --- |
-| GPU0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
-| GPU1 / GPU2 / GPU3 | 各一个 vLLM 采样副本（data parallel，LoRA 热加载） |
+| GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
+| 其余每张卡 | 各一个 vLLM 采样副本（data parallel，LoRA 热加载） |
 
-搜索请求在 CPU 上由主进程发出。显存与布局的整体说明见 [4×A6000 硬件规划](../../docs/content/guide/hardware.md)。
+只有 1 张卡时，训练和采样共用 GPU 0。搜索请求在 CPU 上由主进程发出，不占 GPU。不需要 4 张卡，本章的最低与推荐配置如下（估算，详见[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
+- 多轮轨迹最长 8,192 token。用 24GB 采样卡或单卡共用时，如果 vLLM 报 KV cache 不足，就设置 `models.default.max_model_len: 10240`，写法见第 9 节。
+- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局，用 `uv run python -m localtrio info` 确认。
 
 ## 3. 准备数据
 
@@ -91,7 +100,7 @@ Saved sampler weights: ~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-nam
 
 ## 6. 评测
 
-评测只启动 vLLM，不启动 trainer。训练结束后可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，用 4 张卡采样；训练进行中不要同时评测。
+评测只启动 vLLM，不启动 trainer。训练结束后可以在命令前把所有卡都列给采样，每张卡各跑一个副本：4 张卡写 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，2 张卡写 `0,1`；只有 1 张卡时写 `LOCALTRIO_SAMPLER_GPUS=0`（不加 `1gpu.yaml`），vLLM 就不再限制在 40% 显存。训练进行中不要同时评测。
 
 先评测 Base Model：
 
@@ -146,29 +155,30 @@ uv run python experiments/search-r1/analyse.py --preset deepseek-api \
 
 ## 8. 资源估算
 
-> 以下为按模型规模与原文配置做的**粗略估算，未经实测**；搜索 API 的延迟波动对总耗时影响很大。
+> 以下为按模型规模与原文配置做的**粗略估算，未经实测**；耗时按 4 张 48GB 卡（GPU 0 训练、3 个采样副本）估算。搜索 API 的延迟波动对总耗时影响很大。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU0 训练显存 | 约 15–25 GB（4B bf16 权重约 9 GB + LoRA/AdamW + 激活，单条 ≤ 8,192 token） |
-| GPU1–3 采样显存 | 每卡约 40 GB（vLLM 按 `gpu_memory_utilization=0.85` 预占） |
+| GPU 0 训练显存 | 约 15–25 GB（4B bf16 权重约 9 GB + LoRA/AdamW + 激活，单条 ≤ 8,192 token）；24GB 卡用 micro-batch 8192，约 13–18 GB |
+| 采样卡显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占：48GB 卡约 40 GB，24GB 卡约 20 GB；单卡共用时只占 40% |
 | 单个 step | rollout 约 2–4 分钟 + 训练约 1–3 分钟 |
 | 20 step / 100 step | 约 1–2.5 小时 / 约 5–12 小时（未实测） |
 | 70 题评测 | 约 10–20 分钟 |
+| 卡更少时 | 2 张卡约慢 2–3 倍，1 张卡约慢 3–4 倍；等待搜索 API 的时间不随卡数变化，实际差距可能小一些 |
 | 磁盘 | 每次保存的 LoRA 几十到几百 MB；每步的临时采样权重默认保留最近 4 份（仍被引用的会多留） |
 
 ## 9. 常见问题
 
-改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定，例如：
+改 localtrio 参数时，复制一份与你卡数对应的预设（`configs/1gpu.yaml` / `2gpu.yaml` / `4gpu.yaml`），再用 `LOCALTRIO_CONFIG` 指定；也可以只写改动的几项，没写 `models.default.gpus` 时仍按卡数自动分配。例如：
 
 ```bash
-cp configs/4gpu.yaml my-search-r1.yaml   # 按下面的说明修改
+cp configs/2gpu.yaml my-search-r1.yaml   # 换成你卡数对应的预设，按下面的说明修改
 LOCALTRIO_CONFIG=my-search-r1.yaml uv run python experiments/search-r1/train.py ...
 ```
 
-**训练卡 OOM（trainer 日志出现 `CUDA out of memory`）**：在 YAML 里调小 `trainer.max_tokens_per_microbatch`（16384 → 8192 → 4096），必要时再调小 `trainer.logits_chunk_size`（1024 → 512）。这只改变 micro-batch 的切法，不改变梯度。
+**训练卡 OOM（trainer 日志出现 `CUDA out of memory`）**：在 YAML 里调小 `trainer.max_tokens_per_microbatch`（16384 → 8192 → 4096；`1gpu.yaml`、`2gpu.yaml`、`24gb.yaml` 已是 8192），必要时再调小 `trainer.logits_chunk_size`（1024 → 512）。这只改变 micro-batch 的切法，不改变梯度。
 
-**vLLM 启动失败或采样卡 OOM**：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `models.default.max_model_len: 10240`（需大于本章 8,192 的轨迹上限）。
+**vLLM 启动失败或采样卡 OOM**：报显存不足或 CUDA OOM（多半是同一张卡上还有别的进程）时，调小 `models.default.gpu_memory_utilization`（0.85 → 0.75）；报 KV cache 不足（24GB 卡、单卡共用时常见）时，设置 `models.default.max_model_len: 10240`（需大于本章 8,192 的轨迹上限），这时调小 utilization 只会让 KV cache 更少。
 
 **vLLM 加载 LoRA 时报 target modules 不支持**：把 `trainer.lora_target_modules` 改成 `standard`（只训练 q/k/v/o + MLP），重新训练。
 

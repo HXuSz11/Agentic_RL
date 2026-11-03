@@ -12,14 +12,14 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索环境不变，仍调用 DeepSeek 官方 Search API 或 Wikipedia。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。不需要 4 张卡，1 张 ≥48GB 或 2 张 ≥24GB 的卡即可，卡越多越快，详见[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。搜索环境不变，仍调用 DeepSeek 官方 Search API 或 Wikipedia。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >
 > - 本章代码：[`train.py`](./train.py) / [`rollout.py`](./rollout.py) / [`search.py`](./search.py) / [`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
-> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - SwanLab · 原文 DeepSeek 官方搜索训练（PyTRIO）：[30-step 训练记录](https://swanlab.cn/@kmno4/agentic-rl-lab-search-r1/runs/2rxzhig0/chart)
 > - SwanLab · 原文旧 DeepSeek Evidence 训练（PyTRIO）：[20-step 历史记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-search-r1/runs/06e4gw6a/chart)
 > - Search-R1 论文：[Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning](https://arxiv.org/abs/2503.09516)
@@ -53,7 +53,7 @@
 
 这轮训练后，Step 30 比 Base 净多答对 2 题，格式合规的回答增加了 6 题。两次评测的搜索成功率都是 100%，没有超时或 429。当前结果来自一次训练和 70 道题，说明本轮评测中的 EM 和 Format 都有提升，还需要更多题目与重复实验确认提升是否稳定。
 
-这篇 Blog 的目标很简单：让普通开发者直接关注 Search-R1 最重要的算法结构。我们用 Qwen3.5-4B、可切换的在线搜索服务，以及一台 4×A6000 机器上的 localtrio，把原本沉重的检索与训练基础设施压缩成一套可以直接运行的完整训练闭环（原文用的是 PyTRIO 云端训练）。
+这篇 Blog 的目标很简单：让普通开发者直接关注 Search-R1 最重要的算法结构。我们用 Qwen3.5-4B、可切换的在线搜索服务，以及在自己显卡上运行的 localtrio，把原本沉重的检索与训练基础设施压缩成一套可以直接运行的完整训练闭环（原文用的是 PyTRIO 云端训练）。
 
 ## Search-R1 是从哪里来的？
 
@@ -184,7 +184,7 @@ Wikipedia 客户端使用可识别的 User-Agent，并把所有并发请求的�
 | Base Model | `Qwen/Qwen3.5-4B` |
 | 训练参数 | LoRA rank 32 |
 | 训练框架 | 本地 localtrio（transformers + PEFT 训练，vLLM 采样）；原文为 PyTRIO |
-| GPU 布局 | GPU0 训练，GPU1/2/3 各一个 vLLM 采样副本（4×A6000 48GB） |
+| GPU 布局 | GPU 0 训练，其余卡各一个 vLLM 采样副本；只有 1 张卡时共用 |
 | 搜索环境 | DeepSeek 官方 Search API / Wikipedia，可通过参数切换 |
 | 训练数据 | NQ + HotpotQA |
 | 每个 step | 8 道问题 |
@@ -200,7 +200,7 @@ Wikipedia 客户端使用可识别的 User-Agent，并把所有并发请求的�
 
 我认为这对于学习算法更有价值。希望免密钥完整跑通流程时可以选择 Wikipedia，需要通用网页覆盖和更高并发时可以选择 DeepSeek 官方 Search API。等真正需要追求论文指标时，再把 `search(query)` 换回本地 Wikipedia retriever。
 
-## 本地版：训练和采样怎样在 4 张卡上分工？
+## 本地版：训练和采样怎样在本地显卡上分工？
 
 我以前也尝试过用 veRL 等框架做强化学习。它们当然很强，但如果我只是想研究一个算法，往往要先处理训推一体、模型权重同步、vLLM、分布式训练和多卡资源调度。
 
@@ -215,8 +215,8 @@ Agentic RL 又比普通数学 RL 更麻烦。一次 rollout 里面不只有模�
 本地版保留同一套接口，把底层换成 [localtrio](../../docs/content/guide/localtrio.md)：算法代码只把 `import pytrio as trio` 换成 `import localtrio as trio`，其余调用同名同参。分工变成三类进程：
 
 - 主进程（普通 Python）：数据、搜索环境、rollout 状态机、reward、advantage、实验循环；
-- trainer 子进程（GPU0）：前向、反向、LoRA AdamW、`save_state` 和 `save_weights_for_sampler`；
-- 3 个 vLLM 采样子进程（GPU1/2/3）：优先按 prompt 前 512 个 token 的哈希把请求路由到固定副本（让多轮轨迹复用 prefix cache）；该副本在途请求比最空闲的副本多 8 个以上时，退回最少负载路由。新的 LoRA 权重按目录热加载，不需要重启引擎。
+- trainer 子进程（GPU 0）：前向、反向、LoRA AdamW、`save_state` 和 `save_weights_for_sampler`；
+- vLLM 采样子进程（其余每张卡一个，4 张卡时就是 GPU 1/2/3 上的 3 个副本；单卡时与 trainer 共用 GPU 0）：优先按 prompt 前 512 个 token 的哈希把请求路由到固定副本（让多轮轨迹复用 prefix cache）；该副本在途请求比最空闲的副本多 8 个以上时，退回最少负载路由。新的 LoRA 权重按目录热加载，不需要重启引擎。
 
 主进程里的代码和原文完全一样，只需要像普通 Python 一样调用：
 
@@ -235,20 +235,21 @@ training_client.optim_step(adam_params).result()
 
 `save_weights_and_get_sampling_client()` 在本地会把当前 LoRA 写进 `~/.cache/localtrio/runs/<run_id>/tmp_sampler/` 下的临时目录，再交给 vLLM 热加载；`save_state()` 和 `save_weights_for_sampler()` 返回的是本地绝对路径（`.../states/<name>`、`.../sampler_weights/<name>`），没有 `trio://` 路径。
 
-代价也很直接：GPU 是自己的。训练循环是同步的，rollout 等搜索 API 和长尾轨迹时 GPU0 空着，backward 时 GPU1–3 空着。对 Search-R1 这种“环境交互时间长、有效训练时间短”的任务，这部分空转是本地版要接受的成本；换来的是训练侧不按 token 计费，数据和权重都留在本机。
+代价也很直接：GPU 是自己的。训练循环是同步的，rollout 等搜索 API 和长尾轨迹时 GPU 0 空着，backward 时采样卡空着。对 Search-R1 这种“环境交互时间长、有效训练时间短”的任务，这部分空转是本地版要接受的成本；换来的是训练侧不按 token 计费，数据和权重都留在本机。
 
 ### 本地资源估算
 
-> 下面的数字是按模型规模和原文配置做的**粗略估算，未经实测**。实际值取决于 vLLM / transformers 版本、是否安装 `kernels` 扩展（Qwen3.5 线性注意力训练加速）以及搜索 API 的延迟。
+> 下面的数字是按模型规模和原文配置做的**粗略估算，未经实测**；耗时按 4 张 48GB 卡估算。实际值取决于 vLLM / transformers 版本、是否安装 `kernels` 扩展（Qwen3.5 线性注意力训练加速）以及搜索 API 的延迟。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU 布局 | 内置默认布局（即 `configs/4gpu.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
-| GPU0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加上 LoRA 与 AdamW 状态、梯度检查点激活和分块 logits，单条轨迹 ≤ 8,192 token 时约 15–25 GB |
-| GPU1–3 采样显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占约 40 GB（权重 + KV cache） |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
+| GPU 0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加上 LoRA 与 AdamW 状态、梯度检查点激活和分块 logits，单条轨迹 ≤ 8,192 token 时约 15–25 GB；24GB 卡用 micro-batch 8192，约 13–18 GB |
+| 采样卡显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占（权重 + KV cache）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡报 KV cache 不足时设置 `max_model_len: 10240` |
 | 单个 step | 64 条轨迹：rollout 受搜索延迟和最多 6 轮串行生成影响，约 2–4 分钟；训练约 1–3 分钟 |
 | 20 / 100 step | 约 1–2.5 小时 / 约 5–12 小时（Wikipedia 后端并发只有 3，会更慢） |
 | 评测 70 题 | 约 10–20 分钟，主要受搜索延迟影响 |
+| 卡更少时 | 2 张卡约慢 2–3 倍，1 张卡约慢 3–4 倍；等待搜索 API 的时间不随卡数变化，实际差距可能小一些 |
 
 DeepSeek Search API 仍按次计费（见上面的后端对比表）；本地版省掉的只是训练与采样的云端费用。
 
@@ -622,11 +623,11 @@ advantage 为零的轨迹也保留在完整 batch 中，使 trainer 使用完整
 
 ```bash
 uv sync --extra kernels    # 含 torch / transformers / peft / vllm，kernels 为 Qwen3.5 线性注意力训练加速
-uv run python -m localtrio info   # 确认 4 张 A6000 与 GPU 布局
+uv run python -m localtrio info   # 查看检测到的 GPU 与当前布局
 uv run swanlab login       # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-不需要 `trio login`，训练侧也没有 API Key 或计费（搜索 API 的 Key 见第 3 步）：训练与采样都跑在本机，默认 GPU0 训练、GPU1/2/3 采样，不需要任何配置文件。模型默认从 HuggingFace 下载，国内网络可设置 `HF_ENDPOINT` 或 `LOCALTRIO_MODEL_SOURCE=modelscope`。
+不需要 `trio login`，训练侧也没有 API Key 或计费（搜索 API 的 Key 见第 3 步）：训练与采样都跑在本机，默认 GPU 0 训练、其余卡采样（只有 1 张卡时共用），不需要任何配置文件；只有 1 张 48GB 卡或 2 张 24GB 卡时的写法见[快速启动指南第 2 节](./start.md#2-gpu-布局)。模型默认从 HuggingFace 下载，国内网络可设置 `HF_ENDPOINT` 或 `LOCALTRIO_MODEL_SOURCE=modelscope`。
 
 ### 2. 下载并整理数据
 
@@ -751,7 +752,7 @@ uv run python eval.py \
 
 如果只想先检查整条链路，可以添加 `--limit 20`，再决定是否运行固定 70 题评测。
 
-评测只启动 vLLM，不启动 trainer。训练结束后，可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，让 4 张卡都用来采样；训练还在进行时不要同时评测，4 张卡已经被占满。
+评测只启动 vLLM，不启动 trainer。训练结束后，可以在命令前把所有卡都列给采样（4 张卡写 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，2 张卡写 `0,1`，1 张卡写 `0`）；训练还在进行时不要同时评测，所有卡已经被训练和采样占满。
 
 评测代码在 [`eval.py`](./eval.py)。它对 Base 和 checkpoint 使用相同的 tokenizer、工具协议、搜索环境、轨迹限制和 EM 规则。
 
@@ -822,7 +823,7 @@ Search-R1 不能只看一个 reward 曲线。
 
 第四，DeepSeek Search 与 Wikipedia 返回的证据范围不同，旧 Evidence 接入与官方 Search API 也属于不同搜索环境。本文只在各自相同的搜索环境内比较 checkpoint。
 
-在这些边界内，本文仍然完成了最重要的目标：让大家用很小的存储成本和一台 4 卡工作站，真正把 Search-R1 从代码跑起来，并理解每一部分为什么存在。
+在这些边界内，本文仍然完成了最重要的目标：让大家用很小的存储成本和自己的显卡（1 张 48GB 或 2 张 24GB 起步），真正把 Search-R1 从代码跑起来，并理解每一部分为什么存在。
 
 ## 小结
 
@@ -844,7 +845,7 @@ Search-R1 看起来像一个复杂的 Agent 训练系统，但拆开以后，它
 
 原文的 30-step 训练已经能观察到 Format Rate 和搜索行为的变化，并在固定 70 题评测中提高了 EM。希望免密钥运行时可以使用 Wikipedia；需要通用网页覆盖和更高并发时可以使用 DeepSeek 官方 Search API。
 
-本地版沿用了原文最有价值的一点：采样、训练和 checkpoint 被封装成几个普通 Python 调用，时间可以集中在 reward、rollout、loss mask 和实验设计上。区别只是这些调用由 localtrio 落到自己的 4 张 A6000 上，而不是远端服务。
+本地版沿用了原文最有价值的一点：采样、训练和 checkpoint 被封装成几个普通 Python 调用，时间可以集中在 reward、rollout、loss mask 和实验设计上。区别只是这些调用由 localtrio 落到自己的显卡上，而不是远端服务。
 
 下一篇复现什么，我再想想。可能是 GSPO or OPSD，也可能又会突然冒出一个更好玩的 Agentic RL 想法哈哈哈。
 
@@ -867,7 +868,7 @@ Search-R1 看起来像一个复杂的 Agent 训练系统，但拆开以后，它
 ### 本文实现
 
 1. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
-2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 3. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/search-r1`）
 4. [PyTRIO 文档](https://docs.pytrio.cn/)（原版使用）
 5. [SwanLab 文档](https://docs.swanlab.cn/)

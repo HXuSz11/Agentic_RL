@@ -19,7 +19,8 @@ uv run python eval.py \
 
 脚本报告 Average@N（论文 pass@1 的估计方式）、Pass@N、boxed format rate
 和代码调用统计。评测集复用 experiments/opsd/datasets/aime_2025（30 题，答案均为整数）。
-评测只启动 vLLM，不启动 trainer；训练结束后可用 LOCALTRIO_SAMPLER_GPUS=0,1,2,3 用满 4 张卡。
+评测只启动 vLLM，不启动 trainer；训练结束后可用 LOCALTRIO_SAMPLER_GPUS 把所有卡都列给采样
+（如 4 张卡写 0,1,2,3，2 张卡写 0,1，1 张卡写 0）。
 """
 
 from __future__ import annotations

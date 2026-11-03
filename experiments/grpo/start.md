@@ -24,8 +24,8 @@ uv run python -m localtrio info
 | 你的卡 | 怎么跑 | 速度（相对 4 卡） |
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
-| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
-| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行。24GB 卡另把 micro-batch 调到 8192（写法见第 7 节） | 基准 |
 
 ## 1. 安装依赖
 
@@ -152,7 +152,7 @@ uv run python -m localtrio serve \
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 0 显存（训练） | 约 15～25 GB（4B bf16 权重约 9～10 GB + LoRA / AdamW 约 1～2 GB + 梯度检查点激活）；24GB 卡用 micro-batch 8192（`configs/2gpu.yaml` 已调好），约 13～18 GB |
+| GPU 0 显存（训练） | 约 15～25 GB（4B bf16 权重约 9～10 GB + LoRA / AdamW 约 1～2 GB + 梯度检查点激活）；24GB 卡用 micro-batch 8192（`configs/24gb.yaml` 已调好），约 13～18 GB |
 | 采样卡显存 | vLLM 按 `gpu_memory_utilization=0.85` 预占每卡 85%，大部分是 KV cache：48GB 卡约 40 GB，24GB 卡约 20 GB |
 | 首次启动 | 下载模型 + 加载各引擎，约 2～5 分钟 |
 | 每步耗时 | 按 4 张 48GB 卡估算，`batch 4 × group 8 × 512 tokens`：同步版约 0.5～1.5 分钟，异步版更快 |
@@ -166,7 +166,7 @@ uv run python -m localtrio serve \
 **vLLM 启动时报显存不足或 KV cache 不足。** 这两种报错的调法相反，先看报错原文：
 
 - 报 `Free memory on device ... is less than desired GPU memory utilization` 或 CUDA OOM（多半是同一张卡上还有别的进程）：调小 `models.default.gpu_memory_utilization`（如 0.75）。
-- 报 `... KV cache is needed, which is larger than the available KV cache memory`：模型自带的 `max_model_len` 放不下，设置 `models.default.max_model_len: 8192`，或在显存允许时调大 `gpu_memory_utilization`。这时再调小 utilization 只会让可用的 KV cache 更少。
+- 报 `... KV cache is needed, which is larger than the available KV cache memory`（24GB 卡上常见）：模型自带的 `max_model_len` 放不下，设置 `models.default.max_model_len: 8192`，或在显存允许时调大 `gpu_memory_utilization`。这时再调小 utilization 只会让可用的 KV cache 更少。
 
 **vLLM 报 LoRA 模块不支持**（例如提到 `in_proj_qkv`、`out_proj` 等线性注意力投影）。把 `trainer.lora_target_modules` 改成 `standard`，只在 q/k/v/o + gate/up/down 上加 LoRA。
 

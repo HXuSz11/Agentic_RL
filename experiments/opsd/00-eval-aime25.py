@@ -24,8 +24,8 @@ uv run python 00-eval-aime25.py \
     --model-path ~/.cache/localtrio/runs/RUN_ID/sampler_weights/WEIGHTS_NAME \
     --output eval-results/aime25-sampler-steps25.jsonl
 
-评测只启动 vLLM 采样副本，不加载 trainer；训练结束后可以用
-``LOCALTRIO_SAMPLER_GPUS=0,1,2,3`` 让 4 张卡都参与评测。
+评测只启动 vLLM 采样副本，不加载 trainer；训练结束后可以把所有卡都列进
+``LOCALTRIO_SAMPLER_GPUS``（如 2 张卡时 ``0,1``、4 张卡时 ``0,1,2,3``），让 GPU0 也参与评测。
 
 脚本报告 Average@N、Pass@N 和 boxed format rate。AIME 答案均为整数，
 因此使用整数精确匹配，不额外依赖 math_verify。

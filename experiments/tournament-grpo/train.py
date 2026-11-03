@@ -1,6 +1,7 @@
 """用 localtrio（本地 GPU）训练 Tournament-GRPO：淘汰赛奖励 + 格式奖励、组内标准化 advantage、作者的 PPO loss。
 
-训练与采样都在本机运行：默认 GPU0 跑 LoRA 训练，GPU1/2/3 各跑一个 vLLM 采样副本；
+训练与采样都在本机运行：默认 GPU 0 跑 LoRA 训练，其余每张卡各跑一个 vLLM 采样副本
+（只有 1 张卡时两者共用；不需要 4 张卡，1 张 ≥48GB 或 2 张 ≥24GB 即可）；
 搜索（DeepSeek Search / Jina Reader）和裁判（Jev）仍是外部 API。checkpoint-step-N.json
 里记录的 state_path / sampler_path 是本地目录（~/.cache/localtrio/runs/<run_id>/...）。
 

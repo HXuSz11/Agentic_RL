@@ -1,28 +1,38 @@
-# AgentOPSD 快速启动（本地 4×A6000 版）
+# AgentOPSD 快速启动（本地 GPU 版）
 
-> 完整原理、原文训练结果与代码拆解请查看 [AgentOPSD Blog](./readme.md)。本章通过 localtrio 在本地 GPU 上运行，原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存与 GPU 布局规划见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+> 完整原理、原文训练结果与代码拆解请查看 [AgentOPSD Blog](./readme.md)。本章通过 localtrio 在本地 GPU 上运行，原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存与 GPU 布局规划见 [硬件指南](../../docs/content/guide/hardware.md)。
 
 以下命令均从**仓库根目录**运行。所有计算都在本机完成：ALFWorld / TextWorld 环境跑在 CPU 上，Student rollout 与 Self-Teacher 复评由 vLLM 采样，LoRA 训练由 transformers + PEFT 完成。不需要 `trio login`，不需要 API Key，也没有计费。
 
 > **算力提示**
 >
-> 正式配置每个 update 采样 `16 × 8 = 128` 条长轨迹（单条最长 14,336 tokens），80 steps 共 10,240 条 rollout，并对每条轨迹再做一次整轨迹 Teacher 复评。按第 9 节的估算，4×A6000 上完整训练需要十几个小时。建议先跑通 1-step smoke，再启动完整训练。
+> 正式配置每个 update 采样 `16 × 8 = 128` 条长轨迹（单条最长 14,336 tokens），80 steps 共 10,240 条 rollout，并对每条轨迹再做一次整轨迹 Teacher 复评。按第 9 节的估算，4 张 48GB 卡上完整训练需要十几个小时，卡更少时更久。建议先跑通 1-step smoke，再启动完整训练。
 
 ## 0. GPU 布局
 
-本章只有一个基模 `Qwen/Qwen3.5-4B`。Student 与 Self-Teacher 是同一个参数快照，Teacher 只是换成了带 Skill 的 prompt，两者调用的是同一个 `SamplingClient`，因此共用同一组 vLLM 副本。**直接使用默认布局即可，不需要任何配置文件**：
+本章在你自己的 NVIDIA 显卡上运行，只有一个基模 `Qwen/Qwen3.5-4B`。Student 与 Self-Teacher 是同一个参数快照，Teacher 只是换成了带 Skill 的 prompt，两者调用的是同一个 `SamplingClient`，因此共用同一组 vLLM 副本，不需要额外的卡。**直接使用默认布局即可，不需要任何配置文件**，localtrio 按检测到的卡数分配：
 
 | 设备 | 角色 |
 | --- | --- |
 | GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
-| GPU 1、2、3 | vLLM 采样，3 个副本做 data parallel；Student rollout 与 Teacher `compute_logprobs` 共用，每步热加载最新 LoRA |
+| 其余每张卡 | 各一个 vLLM 副本，做 data parallel；Student rollout 与 Teacher `compute_logprobs` 共用，每步热加载最新 LoRA |
 | CPU | ALFWorld / TextWorld 环境，每条训练轨迹一个子进程 |
 
-默认布局与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。查看本机实际生效的布局：
+只有 1 张卡时，训练和采样共用 GPU 0。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info
 ```
+
+不需要 4 张卡。本章的最低与推荐配置（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 |
+| --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0，vLLM 只占 40% 显存）；训练卡显存偏紧，OOM 见第 10 节 |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡用第 10 节的保守配置（micro-batch 8192、`logits_chunk_size` 512、`max_model_len` 16384），训练卡显存偏紧 |
+| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样用第 10 节的保守配置 |
+
+卡少时超参数不用改，只是更慢，耗时见第 9 节。临时换卡可以用 `LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量覆盖布局。
 
 ## 1. 安装依赖
 
@@ -85,7 +95,7 @@ uv run --extra alfworld python experiments/agentopsd/train.py \
     --swanlab-mode disabled
 ```
 
-第一次运行要加载模型、启动 trainer 和 3 个 vLLM 副本（含 CUDA graph 捕获），启动阶段本身就要几分钟。单个游戏的 4 条轨迹可能全部成功或全部失败，此时 group-relative advantage 为 0，脚本会保留 rollout 指标并跳过参数更新。需要稳定验证 backward 时，可以提高 `--tasks-per-update`。
+第一次运行要加载模型、启动 trainer 和每张采样卡上的 vLLM 副本（含 CUDA graph 捕获），启动阶段本身就要几分钟。单个游戏的 4 条轨迹可能全部成功或全部失败，此时 group-relative advantage 为 0，脚本会保留 rollout 指标并跳过参数更新。需要稳定验证 backward 时，可以提高 `--tasks-per-update`。
 
 ## 5. 启动 80-step 正式训练
 
@@ -200,11 +210,13 @@ uv run --extra alfworld python experiments/agentopsd/eval.py \
 
 每个 JSONL 保存 274 条完整轨迹，最后一行是 summary。`eval.py` 默认保护已有 JSONL；确认需要重跑同一输出文件时，显式增加 `--overwrite-output`。
 
-评测只用到采样引擎，GPU 0 会空闲。**不和训练同时运行时**，可以让 4 张卡都跑 vLLM 副本：
+评测只用到采样引擎，多卡时 GPU 0 会空闲。**不和训练同时运行时**，可以把所有卡都列进 `LOCALTRIO_SAMPLER_GPUS`，让每张卡都跑 vLLM 副本（下例是 4 张卡；2 张卡写 `0,1`；只有 1 张卡时写 `0`，并且不加 `1gpu.yaml`，vLLM 就不再限制在 40% 显存）：
 
 ```bash
 LOCALTRIO_SAMPLER_GPUS=0,1,2,3 uv run --extra alfworld python experiments/agentopsd/eval.py ...
 ```
+
+这样启动时日志会警告采样引擎“与训练共用 GPU 0”；评测不加载 trainer，可以忽略。
 
 ## 8. 生成 checkpoint 对比图
 
@@ -227,15 +239,16 @@ uv run python experiments/agentopsd/analysis.py \
 
 ## 9. 本地资源估算
 
-> 下表是根据模型规模、原文 token 用量和 A6000 算力做的**粗略估算，未经实测**，实际数值取决于 vLLM / transformers 版本、是否安装 `kernels`、CPU 性能和轨迹长度分布。
+> 下表是根据模型规模、原文 token 用量和 48GB 显卡的算力做的**粗略估算，未经实测**，耗时按 4 张 48GB 卡（3 个采样副本）计算，实际数值取决于 vLLM / transformers 版本、是否安装 `kernels`、CPU 性能和轨迹长度分布。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 0（训练） | Qwen3.5-4B bf16 权重约 8～10GB；加上 LoRA、AdamW 和 14K token 单条轨迹的激活（梯度检查点 + 分块 logprob），峰值大约 20～35GB |
-| GPU 1～3（vLLM） | 每张卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外都用作 KV cache；Teacher 对 16K 前缀算 `compute_logprobs` 时会有额外的整词表 logprob 显存尖峰 |
+| GPU 0（训练） | Qwen3.5-4B bf16 权重约 8～10GB；加上 LoRA、AdamW 和 14K token 单条轨迹的激活（梯度检查点 + 分块 logprob），峰值大约 20～35GB。24GB 卡或单卡共用时偏紧，按第 10 节调小 |
+| 采样卡（vLLM） | 每张卡按 `gpu_memory_utilization=0.85` 预占 85%（48GB 卡约 40GB，24GB 卡约 20GB），权重之外都用作 KV cache；Teacher 对 16K 前缀算 `compute_logprobs` 时会有额外的整词表 logprob 显存尖峰 |
 | 单个 update | Student rollout 约 3～7 分钟，Teacher 复评约 1～3 分钟，训练约 3～5 分钟 |
 | 1-step smoke | 约 5～15 分钟，大部分是模型加载与 vLLM 启动 |
 | 80-step 正式训练 | 约 10～20 小时 |
+| 卡更少时 | 采样和 Teacher 复评随副本数近似线性变慢，训练与 CPU 环境步进不变：2 张卡约慢 2～3 倍，1 张卡（`1gpu.yaml`）约慢 3～4 倍 |
 | 一次完整评测（274 局） | 约 0.5～1.5 小时 |
 | CPU / 内存 | 正式配置同时持有 128 个 TextWorld 子进程（16 个游戏组 × 8 条分支），每轮各游戏组的环境步进在线程池里并发执行；建议 16 核以上、64GB 以上内存。CPU 核数少时环境会成为瓶颈 |
 | 磁盘 | 模型约 10GB；每个 sampler weights 是一个 rank-32 LoRA adapter，state 额外包含 AdamW 状态，体积约为前者的数倍 |
@@ -244,17 +257,15 @@ uv run python experiments/agentopsd/analysis.py \
 
 ## 10. 常见问题
 
-**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）：
+**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）。下面的文件没有写 `gpus`，仍按卡数自动分配（GPU 0 训练、其余卡采样）；24GB 卡也可以直接用这份：
 
 ```yaml
-# ~/localtrio-agentopsd.yaml：在默认 4×A6000 布局上做保守的显存设置
+# ~/localtrio-agentopsd.yaml：在默认布局上做保守的显存设置
 trainer:
-  gpus: [0]
   max_tokens_per_microbatch: 8192   # 默认 16384；单条超过上限的轨迹会单独成批
   logits_chunk_size: 512            # 默认 1024；降低 lm_head 分块大小
 models:
   default:
-    gpus: [1, 2, 3]
     gpu_memory_utilization: 0.80    # 默认 0.85；也给 Teacher compute_logprobs 的显存尖峰（约 0.5~1GB）留余量
     max_model_len: 16384            # 与 MAX_SEQUENCE_TOKENS 对齐
 ```
@@ -262,6 +273,8 @@ models:
 ```bash
 LOCALTRIO_CONFIG=~/localtrio-agentopsd.yaml uv run --extra alfworld python experiments/agentopsd/train.py ...
 ```
+
+只有 1 张卡时这份文件同样适用：vLLM 自动和训练共用 GPU 0，`gpu_memory_utilization` 取它和 0.4 中较小的值。还要再给训练让出显存，就把 `gpu_memory_utilization` 改成 0.35。
 
 `max_tokens_per_microbatch` 只影响多条短轨迹拼成的 micro-batch；一条 14K 的轨迹无论如何都会单独前向。若单条长轨迹仍然 OOM，最后的手段是调小 `--max-trajectory-tokens`，但这会改变实验配置，结果不再与原文可比。
 
@@ -280,7 +293,7 @@ trainer:
 
 **CPU 或内存吃紧。** 正式配置每步有 128 个 TextWorld 子进程。调试时可以减小 `--tasks-per-update`；也可以加 `--no-environment-asynchronous` 改用进程内环境，环境步进会串行，速度更慢，但不影响算法。
 
-**只有一张 GPU。** 使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0，速度会慢很多。
+**只有一张 GPU。** 需要 ≥48GB 的卡，使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0，速度约为 4 卡的 1/3～1/4；仍然 OOM 时改用上面的保守配置（单卡同样适用）。24GB / 32GB 单卡放不下本章的设置。
 
 **想看 trainer / vLLM 的详细日志。** 日志默认写到 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。
 

@@ -2,7 +2,8 @@
 
 原文基于 PyTRIO 云端训练；这里通过 localtrio（与 PyTRIO 同名同参）在本地 GPU
 上运行：trainer 进程（默认 GPU 0）负责 LoRA 训练；actor rollout 与生成式 critic
-共用同一个 SamplingClient，落在同一组 vLLM 副本上（默认 GPU 1-3），无需额外配置。
+共用同一个 SamplingClient，落在同一组 vLLM 副本上（默认其余每张卡一个；只有 1 张卡
+时与训练共用 GPU 0），无需额外配置。
 checkpoint 保存在 ``$LOCALTRIO_HOME/runs/<run_id>/``（默认 ``~/.cache/localtrio``）。
 
 训练分两阶段：

@@ -1,4 +1,4 @@
-# DAPO 快速启动（本地 4×A6000 版）
+# DAPO 快速启动（本地 GPU 版）
 
 > 本页是原教程快速启动指南的本地 GPU 版本：训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 在自己的 GPU 上执行，不需要 `trio login`、API Key，也没有计费。算法讲解见 [正文](./readme.md)。
 
@@ -18,20 +18,26 @@ uv run swanlab login               # 可选；不用 SwanLab 就在训练命令�
 
 ## 1. GPU 布局
 
-不提供任何配置文件时，localtrio 使用内置的 4×A6000 默认布局（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同），本章直接用它即可：
+本章只用一个基模（`Qwen/Qwen3.5-4B`），直接使用**默认布局**，不需要配置文件。localtrio 按检测到的卡数分配：
 
 | GPU | 进程 | 作用 |
 | --- | --- | --- |
-| GPU0 | trainer（transformers + PEFT） | LoRA 前向 / 反向、AdamW 更新、保存 checkpoint |
-| GPU1、GPU2、GPU3 | 3 个 vLLM 采样副本（data parallel） | group rollout、AIME25 评测；每个 step 按路径热加载最新 LoRA |
+| GPU 0 | trainer（transformers + PEFT） | LoRA 前向 / 反向、AdamW 更新、保存 checkpoint |
+| 其余每张卡 | 各一个 vLLM 采样副本（data parallel） | group rollout、AIME25 评测；每个 step 按路径热加载最新 LoRA |
+
+只有 1 张卡时，训练和采样共用 GPU 0。本章不需要 4 张卡，最低与推荐配置如下（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
 
 其他情况：
 
-- 只有 1 张 48GB 卡：在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU0，速度明显变慢。
-- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局。
+- 24GB 卡：vLLM 报 KV cache 不足时，复制一份 `configs/24gb.yaml`，去掉其中 `max_model_len: 16384` 的注释，再用 `LOCALTRIO_CONFIG` 指向它；改回 8,192 token 的长 CoT 后训练卡仍 OOM 时，再把 micro-batch 降到 4096（见“常见问题”）。
+- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局，用 `uv run python -m localtrio info` 确认。
 - 权重、checkpoint 和子进程日志默认写在 `~/.cache/localtrio/`，可以用 `LOCALTRIO_HOME=/大容量磁盘/localtrio` 改位置。
-
-GPU 显存规划的更多细节见 [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)。
 
 ## 2. 准备数据
 
@@ -101,24 +107,27 @@ uv run python experiments/dapo/eval.py \
 
 如果用 `--run-name`、`--max-steps` 改了 checkpoint 名，或者在 YAML 里改过 `home:`，上面会找不到目录，这时以训练日志里 `Saved sampler weights:` 打印的路径为准。评测 GRPO baseline 时把名字换成 `grpo-qwen35-4b-10steps-final-sampler-weights`。
 
-评测只启动 vLLM，不加载 trainer。训练已经结束时，可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，让 4 张卡各跑一个副本。每个 JSONL 前 30 行是逐题结果，最后一行是 Average@12、Pass@12、Format 等汇总。
+评测只启动 vLLM，不加载 trainer。训练已经结束时，可以在命令前把所有卡都列给采样，每张卡各跑一个副本：4 张卡写 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，2 张卡写 `0,1`；只有 1 张卡时写 `LOCALTRIO_SAMPLER_GPUS=0`（不加 `1gpu.yaml`），vLLM 就不再限制在 40% 显存。每个 JSONL 前 30 行是逐题结果，最后一行是 Average@12、Pass@12、Format 等汇总。
 
 ## 5. 资源估算（估算，未实测）
 
+耗时按 4 张 48GB 卡（GPU 0 训练，GPU 1–3 采样）估算：
+
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB，其中含 lm_head 分块约 1～3GB |
-| GPU1/2/3 显存 | 每卡 vLLM 预分配约 40GB（`gpu_memory_utilization=0.85`） |
+| GPU 0 显存（训练） | 基模 bf16 约 9～10GB + LoRA/优化器约 1～2GB + 激活，常规约 15～25GB，其中含 lm_head 分块约 1～3GB；24GB 卡用 micro-batch 8192，约 13～18GB |
+| 采样卡显存 | 每卡 vLLM 预分配 85%（`gpu_memory_utilization=0.85`）：48GB 卡约 40GB，24GB 卡约 20GB |
 | GRPO 每步 | 约 2～4 分钟（1 个 rollout wave + 一次 custom loss 更新） |
 | DAPO 每步 | 约 2～10 分钟（1～5 个 rollout wave，取决于补采次数） |
 | 10 step 试跑 | 约 0.5～1.5 小时，不含首次下载模型和启动 vLLM |
 | AIME25 评测 | 每次约 10～20 分钟（360 条，上限 8,192 token） |
+| 卡更少时 | 2 张卡约慢 2～3 倍（通用估算；DAPO 的 wave 主要由最长回答决定，差距可能小一些） |
 
-这些数字是按 A6000 显存带宽和算力推算的数量级，不是实测值，推算过程见正文的 [本地资源估算](./readme.md)。实际耗时以 SwanLab 的 `time/step_seconds` 为准。
+这些数字以 48GB 显卡（显存带宽约 768GB/s、bf16 实际约 40～60 TFLOPS）为例推算，只是数量级，不是实测值，推算过程见正文的 [本地资源估算](./readme.md)。实际耗时以 SwanLab 的 `time/step_seconds` 为准。
 
 ## 常见问题
 
-**GPU0（trainer）显存不足（CUDA OOM）**
+**GPU 0（trainer）显存不足（CUDA OOM）**
 
 先调小 micro-batch 的 token 上限 `trainer.max_tokens_per_microbatch`（默认 16384）。计算 logprob 时 lm_head 按 `logits_chunk_size` 个 token 分块，每块是 `logits_chunk_size × 约 25 万词表` 的 fp32 logits（默认 1024 时约 1～3GB，与序列条数无关）；显存仍紧张时可以再调小 `trainer.logits_chunk_size`（默认 1024，可依次试 512、256）。写一个只包含改动项的配置文件即可，其余项沿用默认布局：
 
@@ -137,13 +146,13 @@ LOCALTRIO_CONFIG=my-localtrio.yaml uv run python experiments/dapo/train.py --alg
 
 **vLLM 启动或采样时显存不足、提示 KV cache 不够**
 
-在配置文件里调低 `models.default.gpu_memory_utilization`（例如 0.80）或 `max_num_seqs`，也可以给 `max_model_len` 设一个够用的值（训练需要 `max_prompt_tokens + max_tokens`，AIME25 评测默认需要约 12,300）：
+启动时显存不足（常见于同卡还有别的进程）：在配置文件里调低 `models.default.gpu_memory_utilization`（例如 0.80）或 `max_num_seqs`。提示 KV cache 不够（24GB 卡上常见）：给 `max_model_len` 设一个够用的值（训练需要 `max_prompt_tokens + max_tokens`，AIME25 评测默认需要约 12,300），这时调低 `gpu_memory_utilization` 只会让 KV cache 更少：
 
 ```yaml
 models:
   default:
-    gpu_memory_utilization: 0.80
-    max_model_len: 16384
+    gpu_memory_utilization: 0.80   # 启动时显存不足才调低
+    max_model_len: 16384           # 提示 KV cache 不够时设置
 ```
 
 **vLLM 报某个 LoRA 模块不支持**
@@ -161,7 +170,7 @@ trainer:
 
 **训练还在跑，想同时评测**
 
-评测会在默认的 GPU1/2/3 上再启动一组 vLLM，和正在训练的采样副本抢显存。建议训练结束后再评测；确实要并行时，用 `LOCALTRIO_SAMPLER_GPUS` 指定空闲的卡。两个 checkpoint 也可以分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3` 并行评测。
+评测默认会在采样卡（GPU 0 以外的卡；单卡时就是 GPU 0）上再启动一组 vLLM，和正在训练的采样副本抢显存。建议训练结束后再评测；确实要并行时，用 `LOCALTRIO_SAMPLER_GPUS` 指定空闲的卡。训练结束后有 4 张卡时，两个 checkpoint 也可以分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3` 并行评测。
 
 **引擎启动失败，想看详细报错**
 

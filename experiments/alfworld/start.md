@@ -1,24 +1,32 @@
-# ALFWorld Agentic RL 快速启动（本地 4×A6000 版）
+# ALFWorld Agentic RL 快速启动（本地 GPU 版）
 
-> 完整原理、原文训练结果与代码拆解请查看 [ALFWorld Agentic RL Blog](./readme.md)。本章通过 localtrio 在本地 GPU 上运行，原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存与 GPU 布局规划见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+> 完整原理、原文训练结果与代码拆解请查看 [ALFWorld Agentic RL Blog](./readme.md)。本章通过 localtrio 在你自己的 NVIDIA 显卡上运行，原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存与 GPU 布局规划见 [硬件指南](../../docs/content/guide/hardware.md)。
 
 以下命令均从**仓库根目录**运行。所有计算都在本机完成：TextWorld / PDDL 环境跑在 CPU 上，rollout 由 vLLM 采样，LoRA 训练由 transformers + PEFT 完成。不需要 `trio login`，不需要 API Key，也没有计费。
 
 > **算力提示**
 >
-> 正式配置每个 update 采样 64 条长轨迹，单条完整序列最多 12K tokens，80 updates 共 5,120 条轨迹。按第 8 节的估算，4×A6000 上完整训练需要十几个小时。建议先运行 1-step 验证，再启动完整训练。
+> 正式配置每个 update 采样 64 条长轨迹，单条完整序列最多 12K tokens，80 updates 共 5,120 条轨迹。按第 8 节的估算，4 张 48GB 卡上完整训练需要十几个小时，卡更少时相应更久。建议先运行 1-step 验证，再启动完整训练。
 
 ## 0. GPU 布局
 
-本章只训练一个基模 `Qwen/Qwen3.5-4B`，**直接使用默认布局即可，不需要任何配置文件**：
+本章只训练一个基模 `Qwen/Qwen3.5-4B`，**通常直接使用默认布局即可，不需要配置文件**（1 张卡或 24GB 卡见下面第二张表）。localtrio 按检测到的卡数自动分工：
 
 | 设备 | 角色 |
 | --- | --- |
 | GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点） |
-| GPU 1、2、3 | vLLM 采样，3 个副本做 data parallel，每个 update 热加载最新 LoRA |
+| 其余 GPU | vLLM 采样，每卡一个副本做 data parallel，每个 update 热加载最新 LoRA；只有 1 张卡时与训练共用 GPU 0 |
 | CPU | TextWorld / PDDL 环境，每条训练轨迹一个子进程 |
 
-默认布局与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。查看本机实际生效的布局：
+不要求 4 张卡：
+
+| 你的卡 | 怎么跑（速度相对 4 卡，估算） |
+| --- | --- |
+| 1 张 ≥48GB | `LOCALTRIO_CONFIG=configs/1gpu.yaml`（自动布局也会这样分），约慢 3～4 倍 |
+| 2 张 ≥24GB | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
+| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同 |
+
+24GB 的采样卡还要设置 `max_model_len: 16384`，见第 9 节。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info
@@ -71,7 +79,7 @@ uv run --extra alfworld python experiments/alfworld/train.py \
     --swanlab-mode disabled
 ```
 
-第一次运行要加载模型、启动 trainer 和 3 个 vLLM 副本（含 CUDA graph 捕获），启动阶段本身就要几分钟。`--save-every 0` 只关闭中间 checkpoint；训练结束后仍会保存最终 state 和 sampler weights。
+第一次运行要加载模型、启动 trainer 和各个 vLLM 副本（含 CUDA graph 捕获），启动阶段本身就要几分钟。`--save-every 0` 只关闭中间 checkpoint；训练结束后仍会保存最终 state 和 sampler weights。
 
 ## 4. 启动 80-step 正式训练
 
@@ -165,7 +173,7 @@ uv run --extra alfworld python experiments/alfworld/eval.py \
 
 `eval.py` 默认拒绝覆盖已有 JSONL。需要重新评测同一路径时，显式增加 `--overwrite-output`。
 
-评测只用到采样引擎，GPU 0 会空闲。**不和训练同时运行时**，可以让 4 张卡都跑 vLLM 副本：
+评测只用到采样引擎，多卡时 GPU 0 会空闲。**不和训练同时运行时**，可以让所有卡都跑 vLLM 副本（下面以 4 张卡为例，2 张卡写 `0,1`；只有 1 张卡时不用改）：
 
 ```bash
 LOCALTRIO_SAMPLER_GPUS=0,1,2,3 uv run --extra alfworld python experiments/alfworld/eval.py ...
@@ -192,15 +200,16 @@ uv run python experiments/alfworld/analysis.py \
 
 ## 8. 本地资源估算
 
-> 下表是根据模型规模、原文 token 用量和 A6000 算力做的**粗略估算，未经实测**，实际数值取决于 vLLM / transformers 版本、是否安装 `kernels`、CPU 性能和轨迹长度分布。
+> 下表是根据模型规模、原文 token 用量和 48GB 显卡（Ampere 架构）算力做的**粗略估算，未经实测**，按 4 张 48GB 卡（GPU 0 训练、GPU 1–3 采样）计算；实际数值取决于显卡型号、vLLM / transformers 版本、是否安装 `kernels`、CPU 性能和轨迹长度分布。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 0（训练） | Qwen3.5-4B bf16 权重约 8～10GB；加上 LoRA、AdamW 和 12K token 单条轨迹的激活（梯度检查点 + 分块 logprob），峰值大约 20～35GB |
-| GPU 1～3（vLLM） | 每张卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外都用作 KV cache |
+| 最低 / 推荐配置 | 最低 1 张 48GB 或 2 张 24GB（见第 0 节），推荐 4 张卡 |
+| 训练卡（GPU 0） | Qwen3.5-4B bf16 权重约 8～10GB；加上 LoRA、AdamW 和 12K token 单条轨迹的激活（梯度检查点 + 分块 logprob），峰值大约 20～35GB；24GB 卡用 micro-batch 8192，仍 OOM 见第 9 节 |
+| 采样卡（vLLM） | 每张卡按 `gpu_memory_utilization=0.85` 预占显存的 85%（48GB 卡约 40GB），权重之外都用作 KV cache |
 | 单个 update | rollout（最多 50 轮环境交互）约 3～8 分钟，训练约 5～8 分钟 |
 | 1-step 验证 | 约 5～15 分钟，大部分是模型加载与 vLLM 启动 |
-| 80-step 正式训练 | 约 10～20 小时（原文在 PyTRIO 上约 12 小时） |
+| 80-step 正式训练 | 约 10～20 小时（原文在 PyTRIO 上约 12 小时）；2 张卡约慢 2～3 倍，1 张卡约慢 3～4 倍 |
 | 一次完整评测（274 局） | 约 0.5～1.5 小时 |
 | CPU / 内存 | 正式配置同时持有 64 个 TextWorld 子进程；建议 8 核以上、32GB 以上内存。CPU 核数少时环境步进会成为瓶颈 |
 | 磁盘 | 模型约 10GB；每个 sampler weights 是一个 rank-32 LoRA adapter，state 额外包含 AdamW 状态，体积约为前者的数倍 |
@@ -212,14 +221,14 @@ uv run python experiments/alfworld/analysis.py \
 **训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）：
 
 ```yaml
-# ~/localtrio-alfworld.yaml：在默认 4×A6000 布局上做保守的显存设置
+# ~/localtrio-alfworld.yaml：保守的显存设置，24GB 卡也可以从这份开始
 trainer:
   gpus: [0]
-  max_tokens_per_microbatch: 8192   # 默认 16384；单条超过上限的轨迹会单独成批
+  max_tokens_per_microbatch: 8192   # 默认 16384；24GB 卡仍 OOM 时降到 4096；单条超过上限的轨迹会单独成批
   logits_chunk_size: 512            # 默认 1024；降低 lm_head 分块大小
 models:
   default:
-    gpus: [1, 2, 3]
+    gpus: [1, 2, 3]                 # 按自己的卡数改，例如 2 张卡写 [1]
     gpu_memory_utilization: 0.80    # 默认 0.85
     max_model_len: 16384            # 12K 轨迹 + 余量
 ```
@@ -241,11 +250,11 @@ trainer:
 
 这会改变 LoRA 的作用范围，结果可能与原文不同。
 
-**vLLM 启动时报 `max_model_len` 超过 KV cache 容量。** 在配置的 `models.default` 下设置 `max_model_len: 16384`。
+**vLLM 启动时报 `max_model_len` 超过 KV cache 容量**（24GB 采样卡上常见）。在配置的 `models.default` 下设置 `max_model_len: 16384`。
 
 **CPU 或内存吃紧。** 调试时可以减小 `--games-per-batch`；也可以加 `--no-environment-asynchronous` 改用进程内环境，环境步进会串行，速度更慢，但不影响算法。
 
-**只有一张 GPU。** 使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0，速度会慢很多。
+**只有一张 GPU。** 需要 ≥48GB 的卡，使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0（vLLM 占 40% 显存），速度约为 4 卡的 1/3～1/4。24GB / 32GB 单卡放不下本章的正式配置，见[硬件指南](../../docs/content/guide/hardware.md)。
 
 **想看 trainer / vLLM 的详细日志。** 日志默认写到 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。
 

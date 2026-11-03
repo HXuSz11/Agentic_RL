@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章最少 1 张 48GB 卡或 2 张 24GB 卡，卡多只是采样更快（见下文“本地资源估算”）。不需要 `trio login`、API Key，也没有计费。
 >
 > 文中“复现结果”一节的表格、曲线和评测数字都是**原文在 PyTRIO 上的结果**；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“复现结果”一节的实现差异说明），复现数值可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
@@ -21,13 +21,13 @@
 > - 本文完整代码：本目录下的 [`train.py`](./train.py)、[`loss.py`](./loss.py)、[`rollout.py`](./rollout.py)、[`eval.py`](./eval.py) 等，运行方式见 [快速启动指南](./start.md)
 > - GSPO 论文：[Group Sequence Policy Optimization](https://arxiv.org/abs/2507.18071)
 > - SwanLab：[原文 100-step 完整训练记录（PyTRIO）](https://swanlab.cn/@kmno4/llm-agent-rl-lab-gspo/runs/o83z2ghp/chart)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第七篇。
 
 前面复现 [DAPO](../dapo/readme.md) 时，我们在 GRPO 的骨架上加入了 Dynamic Sampling、Clip-Higher、Token Mean 和 Soft Overlong Punishment。GSPO 的改动更集中：**沿用 group rollout、reward 和 group-relative advantage，只把 policy loss 里的重要性比率与裁剪从 token 级提升到 sequence 级。**
 
-原文作者用 PyTRIO 在 `Qwen/Qwen3.5-4B` 上完成了 100 steps LoRA 训练，并评测 Base Model 与 Step 20、40、60、80、100 五个 checkpoint。本地版用同一套代码，通过 localtrio 在 4×A6000 上训练与评测：GPU0 做 LoRA 训练，GPU1/2/3 上的 vLLM 负责 rollout 和评测采样。先来看算法，再看原文的结果。
+原文作者用 PyTRIO 在 `Qwen/Qwen3.5-4B` 上完成了 100 steps LoRA 训练，并评测 Base Model 与 Step 20、40、60、80、100 五个 checkpoint。本地版用同一套代码，通过 localtrio 在自己的显卡上训练与评测：GPU 0 做 LoRA 训练，其余卡上的 vLLM 负责 rollout 和评测采样（只有 1 张卡时两者共用）。先来看算法，再看原文的结果。
 
 
 ## GSPO 是什么？
@@ -201,20 +201,31 @@ max_tokens = 8192
 
 ## 本地资源估算（估算，未实测）
 
-本地版没有计费，换成看 GPU 占用和时间。默认布局不需要任何配置文件（等价于 `configs/4gpu.yaml`）：
+本地版没有计费，换成看 GPU 占用和时间。不需要 4 张卡：本章只用一个基模（`Qwen/Qwen3.5-4B`），不写配置文件时 localtrio 按检测到的卡数分配，GPU 0 训练，其余卡各一个 vLLM 采样副本，只有 1 张卡时两者共用。最低与推荐配置（详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0，vLLM 占 40%） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
+表中路径按仓库根目录写；按下文在 `experiments/gspo` 下运行时写 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`。
+
+24GB 卡上，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len: 16384`（训练需要 `max_prompt_tokens + max_tokens` = 6,144，AIME25 评测约 12,300）。
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB，其中 lm_head 计算 logprob 的分块在 `logits_chunk_size=1024` 时约 1～3GB，与 micro-batch 里有多少条序列无关（OOM 的处理见快速启动的常见问题） |
-| GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
+| GPU 0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB（micro-batch 16384；24GB 卡用 8192，约 13～18GB），其中 lm_head 计算 logprob 的分块在 `logits_chunk_size=1024` 时约 1～3GB，与 micro-batch 里有多少条序列无关（OOM 的处理见快速启动的常见问题） |
+| 其余每张卡 | 各一个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 按 `gpu_memory_utilization=0.85` 预分配每卡 85%（权重 + KV cache）：48GB 卡约 40GB，24GB 卡约 20GB |
 
-时间的数量级可以这样推算（正式配置：每步 8 组 × 8 条，completion 上限 4,096）：
+时间的数量级以 4 张 48GB 卡为例推算（正式配置：每步 8 组 × 8 条，completion 上限 4,096）：
 
-- **rollout**：每步 8 个 group 请求分散到 3 个 vLLM 副本上，一次采齐、不补采，耗时由最长的那条 completion 决定。A6000 显存带宽约 768GB/s，4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，按单条序列 40～60 token/s 估计，一个有回答跑满 4,096 token 的 step 约需 1～2 分钟。
-- **训练**：`forward_backward_custom` 约等于 1 次无梯度前向 + 1 次带梯度的前向和反向（含梯度检查点重算），约 8 × 参数量 FLOPs/token，4B 模型约 32 GFLOP/token。退化组不进入训练，若每步约 10 万～20 万 completion token 进入 loss，约 3～6 PFLOP，按 A6000 实际 40～60 TFLOPS 估计约 1～2.5 分钟。
+- **rollout**：每步 8 个 group 请求分散到 3 个 vLLM 副本上，一次采齐、不补采，耗时由最长的那条 completion 决定。按显存带宽约 768GB/s 估算（带宽更高的卡解码更快），4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，按单条序列 40～60 token/s 估计，一个有回答跑满 4,096 token 的 step 约需 1～2 分钟。
+- **训练**：`forward_backward_custom` 约等于 1 次无梯度前向 + 1 次带梯度的前向和反向（含梯度检查点重算），约 8 × 参数量 FLOPs/token，4B 模型约 32 GFLOP/token。退化组不进入训练，若每步约 10 万～20 万 completion token 进入 loss，约 3～6 PFLOP，按 bf16 实际 40～60 TFLOPS 估计约 1～2.5 分钟。
 - **合计**：每步约 2.5～5 分钟，100 steps 约 4～8 小时；每次 AIME25 评测（360 条、上限 8,192 token）约 10～20 分钟。均不含首次下载模型和启动 vLLM 的时间。
+- **卡更少时**：2 张卡只有 1 个采样副本，通用估算约慢 2～3 倍；rollout 时长主要由最长那条回答决定、训练时间不变，实际差距可能小一些。
 
-以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_seconds` 为准，更完整的显存规划见 [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)。
+以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_seconds` 为准，更完整的显存规划见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 ## 如何启动训练
 
@@ -223,7 +234,7 @@ max_tokens = 8192
 ```bash
 # 在仓库根目录
 uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练加速 kernel，推荐安装
-uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU0 训练，GPU1/2/3 采样
+uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU 0 训练，其余卡采样（单卡时共用）
 uv run swanlab login               # 可选；不用 SwanLab 时训练命令加 --swanlab-mode disabled
 ```
 
@@ -246,13 +257,13 @@ uv run python train.py \
     --max-tokens 4096
 ```
 
-`LOCALTRIO_CONFIG` 的相对路径按当前目录解析：在 `experiments/gspo` 下要切换 GPU 布局时写 `LOCALTRIO_CONFIG=../../configs/xxx.yaml`（在仓库根目录则写 `configs/xxx.yaml`，也可以用绝对路径）。
+`LOCALTRIO_CONFIG` 的相对路径按当前目录解析：在 `experiments/gspo` 下要切换 GPU 布局时写 `LOCALTRIO_CONFIG=../../configs/xxx.yaml`（例如 1 张 48GB 卡用 `1gpu.yaml`，24GB 卡用 `24gb.yaml`；在仓库根目录则写 `configs/xxx.yaml`，也可以用绝对路径）。
 
-三个角色分别跑在不同的地方：主进程（普通 Python）负责数据、reward、GSPO loss 和训练流程控制；localtrio 的 trainer 子进程在 GPU0 上执行 LoRA 前向与反向、优化器更新和 checkpoint 保存；GPU1/2/3 上的 vLLM 副本负责采样，每个 step 按路径热加载最新的 LoRA。checkpoint 是 `~/.cache/localtrio/runs/<run_id>/` 下的普通目录，训练日志里的 `Saved sampler weights:` 会打印完整路径。
+三个角色分别跑在不同的地方：主进程（普通 Python）负责数据、reward、GSPO loss 和训练流程控制；localtrio 的 trainer 子进程在 GPU 0 上执行 LoRA 前向与反向、优化器更新和 checkpoint 保存；其余卡上的 vLLM 副本负责采样（单卡时与 trainer 共用 GPU 0），每个 step 按路径热加载最新的 LoRA。checkpoint 是 `~/.cache/localtrio/runs/<run_id>/` 下的普通目录，训练日志里的 `Saved sampler weights:` 会打印完整路径。
 
 ## 我们是怎么复现的？
 
-整条训练链路可以先看这张图。图里用当前默认的 4 个 prompt groups 做示意；上面的正式实验通过命令行把它改成了 8。图中蓝色的 “PYTRIO SERVICE” 在本地版对应 localtrio 的 trainer（GPU0）和 vLLM 采样副本（GPU1/2/3）。
+整条训练链路可以先看这张图。图里用当前默认的 4 个 prompt groups 做示意；上面的正式实验通过命令行把它改成了 8。图中蓝色的 “PYTRIO SERVICE” 在本地版对应 localtrio 的 trainer（GPU 0）和 vLLM 采样副本（其余卡）。
 
 ![GSPO 训练闭环：一个 rollout batch 对应一次更新](<./images/GSPO × PyTRIO · Training Loop.png>)
 
@@ -328,7 +339,7 @@ loss 算完后，localtrio 在主进程里用 autograd 求出 `dL/dlogprob`，�
 
 ### 5. 评测并生成结果图
 
-[`eval.py`](./eval.py) 可以评测 Base Model，也可以读取本地 sampler weights 目录评测任意 checkpoint。它会保存每道题的 12 条完整回答，并聚合 Average@12、Pass@12、Format 和平均 completion tokens。评测只启动 vLLM，不加载 trainer，训练结束后可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 让 4 张卡都参与采样。
+[`eval.py`](./eval.py) 可以评测 Base Model，也可以读取本地 sampler weights 目录评测任意 checkpoint。它会保存每道题的 12 条完整回答，并聚合 Average@12、Pass@12、Format 和平均 completion tokens。评测只启动 vLLM，不加载 trainer，训练结束后可以用 `LOCALTRIO_SAMPLER_GPUS` 把所有卡都列给采样（例如 4 张卡写 `0,1,2,3`）。
 
 [`analyse.py`](./analyse.py) 自动读取 `eval-results/` 中的 summary，按 checkpoint 排序，生成 1×2 AIME25 结果图。本地版默认把图写到 `eval-results/aime25-gspo-progress.png`，不会覆盖本文引用的原文结果图。
 
@@ -349,13 +360,13 @@ loss 算完后，localtrio 在主进程里用 autograd 求出 `dL/dlogprob`，�
 
 GSPO 的思路很直接：保留 GRPO 的 group rollout、reward 和 relative advantage，把重要性比率与 clipping 的单位从 token 改成完整 sequence。原文用 PyTRIO 跑通了这条 custom loss 训练链路，也完成了 Base + 5 个 checkpoint 的 AIME25 评测：Step 20 的单次 Pass@12 提高了 6.66 个百分点，格式遵循率和回答长度的变化更加稳定；数学准确率是否能持续提升，还需要 matched GRPO、更多随机种子和重复评测来回答。
 
-本地版保留了同一套代码和超参数（输出层 `lm_head` 默认不训练，见上文的实现差异说明），把训练与采样换成 localtrio 在 4×A6000 上执行。在本地复现时，除了 AIME25 指标，也建议对照 `gspo/seq_ratio_mean` 和 `gspo/sequence_clip_fraction`，确认训推数值差异没有让大部分序列在第一次更新前就被裁剪。
+本地版保留了同一套代码和超参数（输出层 `lm_head` 默认不训练，见上文的实现差异说明），把训练与采样换成 localtrio 在自己的显卡上执行。在本地复现时，除了 AIME25 指标，也建议对照 `gspo/seq_ratio_mean` 和 `gspo/sequence_clip_fraction`，确认训推数值差异没有让大部分序列在第一次更新前就被裁剪。
 
 ## 参考资料
 
 1. Chujie Zheng et al. [Group Sequence Policy Optimization](https://arxiv.org/abs/2507.18071), 2025.
 2. 本地版代码与运行方式：本目录的 [`train.py`](./train.py)、[`loss.py`](./loss.py) 与 [快速启动指南](./start.md)
-3. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
+3. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 4. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/gspo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/gspo)
 5. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)
 6. [原文 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-gspo/runs/o83z2ghp/chart)

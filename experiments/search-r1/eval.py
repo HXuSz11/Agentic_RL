@@ -12,7 +12,7 @@ uv run python eval.py \
     --output eval_result/eval_results_rl_step_20.jsonl
 
 评测只启动 vLLM 采样引擎，不启动 trainer；训练结束后可以用
-LOCALTRIO_SAMPLER_GPUS=0,1,2,3 把 4 张卡都用来采样。
+LOCALTRIO_SAMPLER_GPUS 把所有卡都列给采样（如 4 张卡写 0,1,2,3，2 张卡写 0,1，1 张卡写 0）。
 """
 
 import argparse

@@ -24,7 +24,7 @@ import localtrio as trio   # 原来是 import pytrio as trio
 │     forward / forward_backward / optim_step / save_state
 │     一个基模进程可托管多个训练 run（每个 run 一个 adapter + 一份优化器状态）
 │
-└── sampler 子进程 ×N   CUDA_VISIBLE_DEVICES=1 / 2 / 3（每卡一个副本）
+└── sampler 子进程 ×N   CUDA_VISIBLE_DEVICES=1 / 2 / …（GPU 0 之外每卡一个副本；单卡时与 trainer 共用 GPU 0）
       vLLM AsyncLLM，连续批处理；token-in / token-out
       LoRA 热加载：每个权重版本（目录路径 + adapter_model.safetensors 修改时间）
       对应一个 LoRARequest；同名目录被覆盖保存后会重新加载
@@ -113,11 +113,30 @@ optim_step ──► save_weights_and_get_sampling_client()
 
 ## 配置
 
-不提供配置时使用内置默认布局（GPU0 训练，其余卡做采样）。需要改布局时写一个 YAML，用环境变量 `LOCALTRIO_CONFIG` 指定，或者命名为 `localtrio.yaml` 放在运行脚本时的当前工作目录（会被自动读取）：
+### 默认布局：按卡数自动分配
+
+不提供配置时，localtrio 启动时检测本机可见的 GPU（遵守 `CUDA_VISIBLE_DEVICES`），按“GPU 0 训练、其余采样”分配：
+
+| 检测到的卡数 | trainer | 训练基模的 vLLM 采样副本 |
+| --- | --- | --- |
+| 0 | CPU | 自动改用 HF 采样，也在 CPU 上（只用于调试，同 `configs/cpu-debug.yaml`） |
+| 1 | GPU 0 | 1 个，与 trainer 共用 GPU 0，`gpu_memory_utilization` 自动压到 ≤0.4 |
+| 2 | GPU 0 | 1 个（GPU 1） |
+| 4 | GPU 0 | 3 个（GPU 1–3） |
+| N | GPU 0 | N−1 个（GPU 1 … N−1），每卡一个 |
+
+1 张、2 张、4 张、8 张卡都不需要配置文件，卡多只是采样副本多、跑得快。YAML 里显式写了 GPU 的其他引擎（例如 OPD 的 27B 教师）先占走自己的卡，剩下的卡再给采样副本（没有剩余时与 trainer 共用）；`models.default.gpus` 写了就按写的来。各章在不同卡数和显存下的建议见[显存与 GPU 布局](./hardware)。
+
+### 用 YAML 或环境变量改布局
+
+需要改布局时写一个 YAML，用环境变量 `LOCALTRIO_CONFIG` 指定，或者命名为 `localtrio.yaml` 放在运行脚本时的当前工作目录（会被自动读取）。`configs/` 里有 1 卡、2 卡、4 卡、24GB 显卡、9B 学生和 27B 教师的预设：
 
 ```bash
-LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py
+LOCALTRIO_CONFIG=configs/24gb.yaml uv run python experiments/grpo/01-demo-sync.py            # 24GB 显卡，卡数自动，训练 micro-batch 8192
+LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py  # 4 张 48GB 卡，27B 教师 TP=2
 ```
+
+只想改分工时不必写文件：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2`。改完用 `uv run python -m localtrio info` 确认。
 
 读取规则：设置了 `LOCALTRIO_CONFIG` 就读它指向的文件，否则读当前工作目录的 `localtrio.yaml`，两者只读一个、不合并；YAML 叠加在内置默认值之上，`trio.configure(...)` 传入的配置项再覆盖 YAML，下面列出的其余 `LOCALTRIO_*` 环境变量最后覆盖。
 
@@ -147,7 +166,7 @@ models:
     tensor_parallel_size: 2
 ```
 
-环境变量：`LOCALTRIO_CONFIG`、`LOCALTRIO_HOME`、`LOCALTRIO_TRAINER_GPUS=0`、`LOCALTRIO_SAMPLER_GPUS=1,2,3`、`LOCALTRIO_SAMPLER_BACKEND=vllm|hf`、`LOCALTRIO_MODEL_SOURCE`、`LOCALTRIO_WORKER_LOGS=inherit`（把引擎日志直接打印到终端）。
+环境变量：`LOCALTRIO_CONFIG`、`LOCALTRIO_HOME`、`LOCALTRIO_TRAINER_GPUS=0`、`LOCALTRIO_SAMPLER_GPUS=1,2`、`LOCALTRIO_SAMPLER_BACKEND=vllm|hf`、`LOCALTRIO_MODEL_SOURCE`、`LOCALTRIO_WORKER_LOGS=inherit`（把引擎日志直接打印到终端）。
 
 ## 命令行工具
 

@@ -8,9 +8,9 @@
 4. ``advantage = teacher_logprob - student_logprob``；
 5. 内置 ``importance_sampling`` loss 更新 student。
 
-本地 GPU 版：训练与采样通过 localtrio（与 PyTRIO 同名同参的本地实现）执行。默认 GPU0 跑
-Student LoRA 训练（transformers + PEFT），GPU1/2/3 各跑一个 vLLM 采样副本；固定 Teacher 就是
-不挂 LoRA 的同一基模，与 Student 共用这组 vLLM 副本，不需要额外配置。
+本地 GPU 版：训练与采样通过 localtrio（与 PyTRIO 同名同参的本地实现）执行。默认 GPU0 跑 Student
+LoRA 训练（transformers + PEFT），其余每张卡各跑一个 vLLM 采样副本（单卡时共用 GPU0）；固定 Teacher
+是不挂 LoRA 的同一基模，与 Student 共用这组 vLLM 副本，不需要额外配置。
 
 以下命令在 experiments/opsd 目录下运行。
 

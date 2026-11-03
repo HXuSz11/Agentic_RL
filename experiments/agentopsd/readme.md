@@ -17,7 +17,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000 48GB 上运行，不需要登录，也没有计费。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。1 张 ≥48GB 或 2 张 ≥24GB 的卡就能跑，卡越多越快（见 5.4 节）；不需要登录，也没有计费。文中的评测数字、SwanLab 曲线和结果图都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
 
 > **代码与复现资源**
 >
@@ -26,9 +26,9 @@
 > - AgentOPSD 论文：[Fine-Grained Agentic Reinforcement Learning via On-Policy Self-Distillation](https://arxiv.org/abs/2608.05987)
 > - 上游实现：[ZethWang/AgentOPSD](https://github.com/ZethWang/AgentOPSD/tree/0c478b2d7cdc201d9b1f076ec5b3dec7e88a161b)
 > - ALFWorld：[论文](https://arxiv.org/abs/2010.03768) / [官方仓库](https://github.com/alfworld/alfworld)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 
-这是“接下来我将复现 10 篇强化学习算法”系列的第 9.3 篇。第 9 篇现在展开成了一个 9.x 小系列：[9.1 Vision GRPO](../vision-grpo/readme.md) 让模型看图做几何题，[9.2 TEMPO](../tempo/readme.md) 把长轨迹切成 macro-step；这一篇则继续处理长轨迹中最棘手的信用分配问题：Agent 最终虽然成功了，中间几十个动作里，究竟哪些才真正关键？AgentOPSD 的答案很漂亮。当前 Agent 先在无技能条件下完成真实 rollout，再由同一个参数快照带着技能复评其中的每个 turn，整个过程无需额外训练 Critic，也无需 Teacher 重写一条“标准轨迹”。最终奖励决定整条轨迹应该被鼓励还是惩罚，Self-Teacher 只负责找出其中更关键的动作。原文使用 Qwen3.5-4B、PyTRIO 和 text-only ALFWorld 完成了 80 个训练 step；本地版用 localtrio 在 4×A6000 上运行同一套代码和超参数。
+这是“接下来我将复现 10 篇强化学习算法”系列的第 9.3 篇。第 9 篇现在展开成了一个 9.x 小系列：[9.1 Vision GRPO](../vision-grpo/readme.md) 让模型看图做几何题，[9.2 TEMPO](../tempo/readme.md) 把长轨迹切成 macro-step；这一篇则继续处理长轨迹中最棘手的信用分配问题：Agent 最终虽然成功了，中间几十个动作里，究竟哪些才真正关键？AgentOPSD 的答案很漂亮。当前 Agent 先在无技能条件下完成真实 rollout，再由同一个参数快照带着技能复评其中的每个 turn，整个过程无需额外训练 Critic，也无需 Teacher 重写一条“标准轨迹”。最终奖励决定整条轨迹应该被鼓励还是惩罚，Self-Teacher 只负责找出其中更关键的动作。原文使用 Qwen3.5-4B、PyTRIO 和 text-only ALFWorld 完成了 80 个训练 step；本地版用 localtrio 在自己的显卡上运行同一套代码和超参数。
 
 但我更愿意把 AgentOPSD 放进一个更大的图景里：它可能已经提供了一种 RSI（Recursive Self-Improvement，递归式自我改进）的雏形。一个本地或私有化部署的模型，白天通过 Codex、Claude Code 这样的 Harness 完成真实任务并留下轨迹；晚上再总结当天的成功、失败与用户纠正，形成类似 Skill 的可复用经验，随后由同一个模型带着这些经验重新审视原始轨迹，通过 AgentOPSD 给每个 turn 分配信用，并借助 PyTRIO、Tinker 这样的训练服务，或者本章 localtrio 这样跑在自己 GPU 上的训练栈，把经验真正写回权重。经过无 Skill 的回归评测后，新模型再进入第二天继续工作。Skill 只是让模型能够看见经验，只有训练才能让经验成为模型能力的一部分。
 
@@ -146,7 +146,7 @@ AgentOPSD 按真实时间顺序递推一条“当前轨迹会成功”的相对 
 
 最后把每条完整多轮轨迹构造成一个 PPO `trio.Datum`。assistant action token 使用所在 turn 的重塑 advantage；环境 observation、system 和 user token 的 advantage 全部为 0。
 
-本地版的分工是：localtrio 的 trainer 进程（GPU 0）负责 Qwen3.5-4B LoRA 的 forward、backward 和 optimizer；vLLM 采样副本（GPU 1–3）负责 Student rollout 和 Teacher `compute_logprobs`，两者用的是同一个参数快照、同一组副本；主进程负责 ALFWorld 环境、Skill 选择、Teacher 对齐、turn credit 和 batch 边界。原文中 forward、backward 和 optimizer 由 PyTRIO 远端执行，调用方式完全相同。一次 PPO 更新结束后，才进入下一个参数快照。
+本地版的分工是：localtrio 的 trainer 进程（GPU 0）负责 Qwen3.5-4B LoRA 的 forward、backward 和 optimizer；vLLM 采样副本（其余每张卡一个；只有 1 张卡时与 trainer 共用 GPU 0）负责 Student rollout 和 Teacher `compute_logprobs`，两者用的是同一个参数快照、同一组副本；主进程负责 ALFWorld 环境、Skill 选择、Teacher 对齐、turn credit 和 batch 边界。原文中 forward、backward 和 optimizer 由 PyTRIO 远端执行，调用方式完全相同。一次 PPO 更新结束后，才进入下一个参数快照。
 
 ## 3. 我们是怎么复现的？
 
@@ -194,7 +194,7 @@ AgentOPSD 的核心变化发生在 loss 之前：我们先在主进程里把 Tea
 
 ## 4. 快速开始
 
-下面所有命令都从仓库根目录运行，完整步骤（含输出位置、资源估算与常见问题）见 [start.md](./start.md)。本地版的所有计算都在本机完成：GPU 0 训练 LoRA，GPU 1–3 跑 vLLM 采样（Student 与 Self-Teacher 共用），ALFWorld 环境跑在 CPU 上。使用默认布局，不需要配置文件。
+下面所有命令都从仓库根目录运行，完整步骤（含输出位置、资源估算与常见问题）见 [start.md](./start.md)。本地版的所有计算都在本机完成：GPU 0 训练 LoRA，其余每张卡跑一个 vLLM 采样副本（Student 与 Self-Teacher 共用；只有 1 张卡时与训练共用 GPU 0），ALFWorld 环境跑在 CPU 上。默认布局不需要配置文件；只有 1 张卡或用 24GB 卡时的设置见 5.4 节。
 
 ### 4.1 安装依赖并下载 ALFWorld
 
@@ -352,15 +352,17 @@ uv run python experiments/agentopsd/analysis.py \
 
 ### 5.4 本地资源估算
 
-> 以下是按模型规模、上表的 token 用量和 A6000 算力做的**粗略估算，未经实测**，实际耗时取决于软件版本、CPU 性能和轨迹长度分布。
+> 以下是按模型规模、上表的 token 用量和 48GB 显卡的算力做的**粗略估算，未经实测**，耗时按 4 张 48GB 卡（3 个采样副本）计算，实际耗时取决于软件版本、CPU 性能和轨迹长度分布。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 布局 | 默认布局，无需配置：GPU 0 训练，GPU 1–3 各一个 vLLM 副本，Student 与 Self-Teacher 共用 |
+| GPU 布局 | 默认布局，无需配置：GPU 0 训练，其余每张卡一个 vLLM 副本，Student 与 Self-Teacher 共用 |
+| 最低配置 | 1 张 ≥48GB（`LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0），或 2 张 ≥24GB（24GB 卡用 [start.md](./start.md) 常见问题里的保守配置）。这两种情况训练卡显存都偏紧，OOM 时的调法也见那里 |
+| 推荐配置 | 4 张卡；3 张、8 张也直接运行 |
 | GPU 0 显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 14K token 单条轨迹的激活，峰值约 20～35GB |
-| GPU 1–3 显存 | 每卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外用作 KV cache；Teacher 整轨迹 `compute_logprobs` 会有额外显存尖峰 |
+| 采样卡显存 | 每卡按 `gpu_memory_utilization=0.85` 预占 85%（48GB 卡约 40GB），权重之外用作 KV cache；Teacher 整轨迹 `compute_logprobs` 会有额外显存尖峰 |
 | 单个 update | Student rollout 约 3～7 分钟，Teacher 复评约 1～3 分钟，训练约 3～5 分钟 |
-| 80-step 正式训练 | 约 10～20 小时 |
+| 80-step 正式训练 | 约 10～20 小时；2 张卡约慢 2～3 倍，1 张卡约慢 3～4 倍 |
 | 一次完整评测 | 274 局约 0.5～1.5 小时 |
 | CPU | 每个 update 同时持有 128 个 TextWorld 子进程，建议 16 核以上、64GB 以上内存；核数少时环境步进会成为瓶颈 |
 
@@ -386,7 +388,7 @@ OOM 时该调哪些参数、如何换成单卡布局，见 [start.md](./start.md
 
 GRPO 仍然掌握最终方向：成功轨迹往上推，失败轨迹往下压；Self-Teacher 只在这个方向内做有界的 turn-level 调整。这样既保留了环境 verifier 的最终权威，又把一个稀疏的终局奖励拆成了更细的长轨迹信用分配。
 
-原文用 80 个 step、10,240 条训练 rollout 跑通了完整链路。固定 274-game 评测上，整体成功率从 58.8% 提高到 65.7%，平均无效动作从 7.07 降到 5.68。结果是正的，算力开销也确实不小；更重要的是，它给后面的严格 GRPO 对照和多 seed 实验留下了一条已经可运行、可审计、可评测的起点。现在这条链路也可以完整地跑在自己的 4 张 A6000 上。
+原文用 80 个 step、10,240 条训练 rollout 跑通了完整链路。固定 274-game 评测上，整体成功率从 58.8% 提高到 65.7%，平均无效动作从 7.07 降到 5.68。结果是正的，算力开销也确实不小；更重要的是，它给后面的严格 GRPO 对照和多 seed 实验留下了一条已经可运行、可审计、可评测的起点。现在这条链路也可以完整地跑在自己的显卡上。
 
 ## 8. 代码文件分别做什么？
 

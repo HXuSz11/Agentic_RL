@@ -12,12 +12,12 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《OPD 如何增强 LLM 的医疗能力，同时保住通用能力》的本地 GPU 版本。训练代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与 teacher 打分用 vLLM）在 4×RTX A6000（48GB）上运行；评测脚本改为连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要登录、API key，也没有计费。文中所有准确率、结果图与 checkpoint 路径均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。实验设计、SAR-OPD / IDT-OPD 方案与结论来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《OPD 如何增强 LLM 的医疗能力，同时保住通用能力》的本地 GPU 版本。训练代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与 teacher 打分用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。Teacher 与 Student 是同一个基模，不需要额外的卡，本章最少 1 张 48GB 卡或 2 张 24GB 卡（见下文「本地资源估算」）。评测脚本改为连接本地 `python -m localtrio serve` 启动的 OpenAI 兼容服务。不需要登录、API key，也没有计费。文中所有准确率、结果图与 checkpoint 路径均为**原文在 PyTRIO 云端的结果**，本地复现的数值可能有差异。实验设计、SAR-OPD / IDT-OPD 方案与结论来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
 > - 原版开源仓库：[Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)
-> - 本地运行：[快速启动](./start.md) / [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - 本地运行：[快速启动](./start.md) / [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - SwanLab 注册入口：[https://swanlab.cn/login](https://swanlab.cn/login)（训练过程与实验指标记录）
 > - Medical SFT 数据集：[FreedomIntelligence/medical-o1-reasoning-SFT](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
 > - MedQA-zh 评测数据：[bigbio/med_qa](https://huggingface.co/datasets/bigbio/med_qa)
@@ -32,13 +32,13 @@
 
 所以我又花了一周左右，从 Medical SFT 开始设计实验，训练 Medical Teacher，尝试 Medical OPD，再一点点处理领域能力增强之后的通用能力遗忘。最后才有了这篇 Blog 里的两套方案，以及每个阶段完整的 MedQA-zh 和 C-Eval 评测结果。这一周里我从 Medical OPD 实验中获得了很多知识和反馈，也踩了不少坑。希望把这些过程写下来之后，能够帮助到同样在研究 OPD、模型蒸馏和领域能力训练的朋友。做完整个实验我大概花了 500 块钱左右吧，但这是我所有的实验操作，如果大家来复现的话大概可以在200块钱以内吧，如果只是完成 DeepMath OPD 的实验，应该只需要50 块钱吧，如果只是想要了解 OPD 的原理，简单跑几十个 step ，那应该几块钱吧？
 
-> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案在 4×A6000 上大约需要一到数天（估算，见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 估计一两个小时内可以跑完（同为估算，未实测，按每步约 1–1.5 分钟推算；本章的 Medical OPD 需先用 02-medical-sft.py 得到 SFT Teacher，只看原理也可以先跑 [通用 OPD 入门教程](../general-opd/readme.md) 的 demo）。
+> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案按 4 张 48GB 卡估算大约需要一到数天，卡更少时更久（见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 估计一两个小时内可以跑完（同为估算，未实测，按 4 张卡每步约 1–1.5 分钟推算；本章的 Medical OPD 需先用 02-medical-sft.py 得到 SFT Teacher，只看原理也可以先跑 [通用 OPD 入门教程](../general-opd/readme.md) 的 demo）。
 
 我很喜欢 Thinking Machines Lab 的 Lilian Weng 写的 Blog。读她的 Blog，会感觉她正在坐在对面，慢慢讲清楚自己为什么研究这个问题、做过哪些尝试、看到了什么结果，又从结果里得出了什么判断。希望我在未来的某天也可以做到这一步～
 
 为什么要用 PyTRIO 这种接口做 RL 算法的复现呢？原作者之前也尝试过用 Verl 等一些开源的 RL 训练框架，但认为这些框架都太重了：只是想研究损失函数，却要付出比研究损失函数更多的时间去配置训练环境、研究框架结构，这是本末倒置的事情。原文因此选择了 PyTRIO（相比 Tinker 对国内用户更友好，并且按 token 计费，显卡空转的时间不收费）。
 
-本地版保留了这套“只写训练循环和 loss”的 API：localtrio 与 PyTRIO 同名同参，训练脚本只把 `import pytrio as trio` 换成了 `import localtrio as trio`（评测脚本改为连接本地 OpenAI 兼容服务）。代价是训推一体时的空等要自己承担：rollout 期间 GPU0 的训练卡在等采样，参数更新期间 GPU1–3 的采样卡在等训练，这是同步 on-policy 训练在固定几张卡上的固有成本。
+本地版保留了这套“只写训练循环和 loss”的 API：localtrio 与 PyTRIO 同名同参，训练脚本只把 `import pytrio as trio` 换成了 `import localtrio as trio`（评测脚本改为连接本地 OpenAI 兼容服务）。代价是训推一体时的空等要自己承担：rollout 期间训练卡（GPU 0）在等采样，参数更新期间采样卡在等训练，这是同步 on-policy 训练在固定几张卡上的固有成本。
 
 > 所以大家希望下一篇是 GSPO 还是 Search-R1 呢？
 
@@ -294,7 +294,7 @@ teacher_client = await service_client.create_sampling_client_async(
 )
 ```
 
-这里的 `training_client` 是可训练 Student，`teacher_client` 指向 Medical SFT epoch 3 的 sampler weights。本地版里 Teacher（SFT LoRA）和 Student 都是 `Qwen/Qwen3.5-4B`，共用 GPU1–3 上的同一组 vLLM 副本，每个请求按路径挂载各自的 LoRA，所以不需要为 Teacher 额外分配显卡。
+这里的 `training_client` 是可训练 Student，`teacher_client` 指向 Medical SFT epoch 3 的 sampler weights。本地版里 Teacher（SFT LoRA）和 Student 都是 `Qwen/Qwen3.5-4B`，共用同一组 vLLM 采样副本（默认是 GPU 0 以外的所有卡），每个请求按路径挂载各自的 LoRA，所以不需要为 Teacher 额外分配显卡。
 
 每个 step 开始时，先从当前 Student 权重导出 sampler：
 
@@ -615,12 +615,14 @@ uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练�
 uv run python -m localtrio info    # 确认 GPU 布局
 ```
 
-这一章的 Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，直接用**内置默认布局**，不需要配置文件（等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
+这一章的 Student、Medical Teacher（SFT LoRA）和 Base Teacher 都是 `Qwen/Qwen3.5-4B`，直接用**内置默认布局**，不需要配置文件。localtrio 按检测到的卡数分配：
 
 | GPU | 训练脚本运行时 | 评测时 |
 | --- | --- | --- |
-| GPU0 | LoRA 训练（transformers + PEFT） | 可再起一个评测服务 |
-| GPU1、GPU2、GPU3 | 各一个 vLLM 副本：Student 采样 + Teacher 打分（按请求挂载不同 LoRA） | `python -m localtrio serve` 评测服务 |
+| GPU 0 | LoRA 训练（transformers + PEFT） | 可再起一个评测服务 |
+| 其余每张卡 | 各一个 vLLM 副本：Student 采样 + Teacher 打分（按请求挂载不同 LoRA） | `python -m localtrio serve` 评测服务 |
+
+只有 1 张卡时训练和采样共用 GPU 0。不需要 4 张卡，卡数怎么选见下文「本地资源估算」。
 
 ### 1. 下载并整理数据
 
@@ -732,9 +734,11 @@ checkpoint 最好保存在完整调度周期结束后。`1:1` 的周期长度是
 原版评测脚本调用 PyTRIO 的 OpenAI 兼容端点；本地版改为先用 `localtrio serve` 在一张卡上启动 vLLM 的 OpenAI 兼容服务（训练结束后 GPU 都空闲）：
 
 ```bash
-# 终端 1：GPU1 上启动服务，base_url = http://127.0.0.1:8000/v1
+# 终端 1：GPU 1 上启动服务，base_url = http://127.0.0.1:8000/v1
 uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --gpus 1 --port 8000 --max-model-len 16384
 ```
+
+只有 1 张卡时把 `--gpus 1` 改成 `--gpus 0`（先结束训练）。
 
 评测脚本默认连接这个地址，API key 未设置时自动用 `EMPTY`。`--model` 可以传基模名 `Qwen/Qwen3.5-4B`，也可以直接传本地 `sampler_weights` 目录——脚本会通过 `/v1/load_lora_adapter` 动态挂载这个 LoRA：
 
@@ -764,13 +768,21 @@ uv run python experiments/medical-opd/01-eval-ceval.py \
 
 > 以下为按模型规模和 token 量推算的**估算值，未实测**，实际取决于 vLLM / transformers 版本、是否安装 kernels，以及 Student 实际生成的长度。
 
+**卡数（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）**：Teacher 和 Student 同基模、共用采样副本，所以这一章和单基模章节一样，不需要 4 张卡：
+
+| 你的卡 | 怎么跑 | OPD 速度（相对 4 卡） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0，vLLM 占 40%） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
 **显存（估算）**：
 
-- GPU0（训练）：4B bf16 权重 9–10GB + LoRA 与 AdamW 状态 + 激活。SFT 每步最多 16 × 2048 token，OPD 每步最多 16 条 × 约 2.2k token；trainer 按 `max_tokens_per_microbatch=16384` 切 micro-batch 并开启梯度检查点，峰值估计 20–30GB。
-- GPU1–3（采样）：每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`），4B 权重之外都是 KV cache；Teacher LoRA、Student LoRA 和 Base 共用这些副本。
-- 评测服务：单卡 vLLM 预占约 43GB（`localtrio serve` 默认 `gpu_memory_utilization=0.9`）。
+- GPU 0（训练）：4B bf16 权重 9–10GB + LoRA 与 AdamW 状态 + 激活。SFT 每步最多 16 × 2048 token，OPD 每步最多 16 条 × 约 2.2k token；trainer 按 `max_tokens_per_microbatch=16384` 切 micro-batch 并开启梯度检查点，峰值估计 20–30GB。24GB 卡用 8192（`configs/24gb.yaml` 已调好）。
+- 其余卡（采样）：每个 vLLM 副本预占每卡 85%（`gpu_memory_utilization=0.85`），48GB 卡约 40GB、24GB 卡约 20GB，4B 权重之外都是 KV cache；Teacher LoRA、Student LoRA 和 Base 共用这些副本。24GB 卡上 vLLM 报 KV cache 不足时，复制一份 `configs/24gb.yaml`，去掉其中 `max_model_len: 16384` 的注释后用 `LOCALTRIO_CONFIG` 指向它。
+- 评测服务：单卡 vLLM 预占 90%（`localtrio serve` 默认 `gpu_memory_utilization=0.9`），48GB 卡约 43GB、24GB 卡约 22GB。
 
-**耗时（估算）**：
+**耗时（按 4 张 48GB 卡估算；2 张卡时 OPD 约慢 2–3 倍，SFT 只用训练卡、基本不受卡数影响）**：
 
 | 阶段 | 估算 |
 | --- | --- |
@@ -860,6 +872,6 @@ IDT-OPD 则把两个 Teacher 放进同一个训练循环。它没有产生一个
 ### 实现与实验工具
 
 1. 本文完整代码：本地版见[本目录](./)；原版见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/medical-opd)
-2. 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+2. 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 3. PyTRIO 原版文档：[快速开始](https://docs.pytrio.cn/docs) · [Compute Logprobs](https://docs.pytrio.cn/docs/advanced/compute_logprobs) · [自定义 Loss Function](https://docs.pytrio.cn/docs/guide/loss_fn)
 4. SwanLab 文档：[快速开始](https://docs.swanlab.cn/guide_cloud/general/quick-start.html)

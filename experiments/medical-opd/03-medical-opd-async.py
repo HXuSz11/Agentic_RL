@@ -37,7 +37,7 @@ uv run python 03-medical-opd-async.py \
 注意：`--max-tokens 2048` 是 completion 输出预算，不是总上下文长度。
 
 本地版：teacher（SFT LoRA）与 student 同为 Qwen3.5-4B，共用默认采样池，不需要额外配置
-（默认 GPU0 训练、GPU1-3 vLLM）。YOUR_SFT_SAMPLER_WEIGHTS_PATH 是 02-medical-sft.py 打印的
+（默认 GPU 0 训练、其余卡跑 vLLM，单卡时共用）。YOUR_SFT_SAMPLER_WEIGHTS_PATH 是 02-medical-sft.py 打印的
 本地目录，形如 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>-epoch003。
 """
 

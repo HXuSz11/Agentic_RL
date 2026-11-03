@@ -1,0 +1,14 @@
+# 24GB 显卡（RTX 3090 / 4090 等），任意张数（≥2）：只调显存相关的取值，GPU 仍按卡数自动分配
+#   GPU 0 训练（micro-batch 8192），其余每张卡一个 vLLM 采样副本。
+# 只有 1 张 24GB 卡放不下“训练 + 采样”，见 docs/content/guide/hardware.md。
+# 用法：LOCALTRIO_CONFIG=configs/24gb.yaml uv run python experiments/grpo/01-demo-sync.py
+trainer:
+  gradient_checkpointing: true
+  # 长轨迹章节（ALFWorld、Tournament-GRPO 等）训练卡仍 OOM 时再降到 4096
+  max_tokens_per_microbatch: 8192
+models:
+  default:
+    gpu_memory_utilization: 0.85
+    # 24GB 卡上 KV cache 只有约 10GB：vLLM 启动报 KV 不足时取消注释，
+    # 取值要大于该章 prompt + 回答的最大长度
+    # max_model_len: 16384

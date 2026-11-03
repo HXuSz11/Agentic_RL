@@ -1,4 +1,4 @@
-# OPSD 快速启动（本地 4×A6000 版）
+# OPSD 快速启动（本地 GPU 版）
 
 > 本页是原教程快速启动指南的本地 GPU 版本：训练与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 在自己的 GPU 上执行，不需要 `trio login`、API Key，也没有计费。算法讲解和原文结果见 [正文](./readme.md)。
 
@@ -18,22 +18,27 @@ uv run swanlab login               # 可选；不用 SwanLab 就在训练命令�
 
 ## 1. GPU 布局
 
-不提供任何配置文件时，localtrio 使用内置的 4×A6000 默认布局（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同），本章直接用它即可：
+本章在你自己的 NVIDIA 显卡上运行。不提供任何配置文件时，localtrio 按检测到的卡数分配，本章直接用它即可：
 
 | GPU | 进程 | 作用 |
 | --- | --- | --- |
 | GPU0 | trainer（transformers + PEFT） | Student 的 LoRA 前向 / 反向、AdamW 更新、保存 checkpoint |
-| GPU1、GPU2、GPU3 | 3 个 vLLM 副本（data parallel） | Student 采样（挂当前 LoRA）+ 固定 Teacher 的 `compute_logprobs`（同一基模，不挂 LoRA） |
+| 其余每张卡 | 各一个 vLLM 副本（data parallel） | Student 采样（挂当前 LoRA）+ 固定 Teacher 的 `compute_logprobs`（同一基模，不挂 LoRA） |
 
-固定 Teacher 就是 step-0 的同一个基模，和 Student 共用这组 vLLM 副本，不需要额外配置，也不会多加载一份模型。
+只有 1 张卡时，trainer 和 vLLM 共用 GPU0。固定 Teacher 就是 step-0 的同一个基模，和 Student 共用这组 vLLM 副本，不需要额外配置，也不需要额外的卡。
 
-其他情况：
+不需要 4 张卡。本章的最低与推荐配置（估算，详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
 
-- 只有 1 张 48GB 卡：在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU0，速度明显变慢。
-- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局。
+| 你的卡 | 怎么跑 |
+| --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU0（vLLM 只占 40% 显存） |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） |
+| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡用常见问题里的配置文件把 micro-batch 调到 8192 |
+
+卡少时实验设置不用改，只是更慢，各项耗时见第 5 节。24GB 卡上 vLLM 启动报 KV cache 不足时，再按常见问题设置 `max_model_len`。其他情况：
+
+- 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局；`uv run python -m localtrio info` 显示实际生效的布局。
 - 权重、checkpoint 和子进程日志默认写在 `~/.cache/localtrio/`，可以用 `LOCALTRIO_HOME=/大容量磁盘/localtrio` 改位置。
-
-GPU 显存规划的更多细节见 [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)。
 
 ## 2. 准备数据
 
@@ -110,7 +115,7 @@ for s in 25 50 75 100; do
 done
 ```
 
-评测只启动 vLLM，不加载 trainer。训练已经结束时，可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，让 4 张卡各跑一个副本。每个 JSONL 前 30 行是逐题结果，最后一行是 Average@12、Pass@12、Format 等汇总。
+评测只启动 vLLM，不加载 trainer，但多卡时默认仍把 GPU0 留给 trainer。训练已经结束时，可以把所有卡都列进 `LOCALTRIO_SAMPLER_GPUS`（2 张卡写 `0,1`，4 张卡写 `0,1,2,3`），让每张卡各跑一个副本；只有 1 张卡时不加 `1gpu.yaml`，改加 `LOCALTRIO_SAMPLER_GPUS=0`，vLLM 就不再限制在 40% 显存。这时日志会警告采样引擎“与训练共用 GPU 0”，评测时可以忽略。每个 JSONL 前 30 行是逐题结果，最后一行是 Average@12、Pass@12、Format 等汇总。
 
 最后汇总成图：
 
@@ -124,13 +129,14 @@ uv run python experiments/opsd/analysis.py
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存 | 基模 bf16 约 9～10GB + LoRA rank 64/优化器约 2～3GB + 激活，常规约 15～25GB（含 lm_head 分块约 1～3GB） |
-| GPU1/2/3 显存 | 每卡 vLLM 预分配约 40GB（`gpu_memory_utilization=0.85`） |
-| 每个训练 step | 约 1～1.5 分钟（32 条 ≤1,024 token 的 rollout + Teacher 打分 + 一次更新） |
-| 100 steps | 约 1.5～2.5 小时，不含首次下载模型和启动 vLLM |
-| AIME25 评测 | 每个模型状态约 20～40 分钟（360 条，上限 38,912 token），Base + 4 个 checkpoint 约 2～3.5 小时 |
+| GPU0 显存（训练） | 基模 bf16 约 9～10GB + LoRA rank 64/优化器约 2～3GB + 激活，常规约 15～25GB（含 lm_head 分块约 1～3GB）；24GB 卡用 micro-batch 8192（`configs/24gb.yaml` 已调好） |
+| 采样卡显存 | vLLM 按 `gpu_memory_utilization=0.85` 预分配每卡 85%：48GB 卡约 40GB，24GB 卡约 20GB |
+| 每个训练 step | 按 4 张 48GB 卡估算，约 1～1.5 分钟（32 条 ≤1,024 token 的 rollout + Teacher 打分 + 一次更新） |
+| 100 steps | 按 4 张卡估算，约 1.5～2.5 小时，不含首次下载模型和启动 vLLM |
+| AIME25 评测 | 按 3 个采样副本估算，每个模型状态约 20～40 分钟（360 条，上限 38,912 token），Base + 4 个 checkpoint 约 2～3.5 小时 |
+| 卡更少时 | 训练每步主要等一轮采样和一次更新，多几个副本帮助有限：2 张卡约慢 1.2～1.5 倍，1 张卡（`1gpu.yaml`）约慢 1.5～2 倍。评测吞吐随副本数近似线性：2 张卡（训练结束后两卡都评测）约慢 1.5～2 倍，1 张卡约慢 3 倍 |
 
-这些数字是按 A6000 显存带宽和算力推算的数量级，不是实测值，推算过程见正文的 [本地资源估算](./readme.md)。评测时间主要由最长的那几条回答决定。
+这些数字是以 48GB 显卡（显存带宽约 768GB/s、bf16 实际 40～60 TFLOPS）为例推算的数量级，不是实测值，推算过程见正文的 [本地资源估算](./readme.md)。评测时间主要由最长的那几条回答决定。
 
 ## 常见问题
 
@@ -183,7 +189,7 @@ trainer:
 
 **训练还在跑，想同时评测**
 
-评测会在默认的 GPU1/2/3 上再启动一组 vLLM，和正在训练的采样副本抢显存。建议训练结束后再评测。默认布局下训练时 4 张卡都被占用（GPU0 trainer，GPU1/2/3 采样）。确实要并行，就在启动训练时加 `LOCALTRIO_SAMPLER_GPUS=1,2` 只用两个采样副本，把 GPU3 空出来，评测时再加 `LOCALTRIO_SAMPLER_GPUS=3`。训练结束后，多个 checkpoint 可以分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3` 并行评测。
+评测会在训练正在用的采样卡上再启动一组 vLLM，和训练的采样副本抢显存。默认布局下训练时所有卡都被占用（GPU0 trainer，其余卡采样），建议训练结束后再评测。确实要并行，需要先给评测空出一张卡，以 4 张卡为例：启动训练时加 `LOCALTRIO_SAMPLER_GPUS=1,2` 只用两个采样副本，把 GPU3 空出来，评测时再加 `LOCALTRIO_SAMPLER_GPUS=3`。只有 1～2 张卡时就等训练结束。训练结束后，多个 checkpoint 也可以分到不同的卡上并行评测，例如 4 张卡时分别用 `LOCALTRIO_SAMPLER_GPUS=0,1` 和 `LOCALTRIO_SAMPLER_GPUS=2,3`。
 
 **引擎启动失败，想看详细报错**
 

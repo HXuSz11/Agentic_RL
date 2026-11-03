@@ -15,14 +15,14 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 默认的梯度严格等于自定义 loss 的梯度，与 PyTRIO SDK 的尺度差异见第 5.5 节）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本，原内容由 [MRLE](https://mrlepro.com) 贡献。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样，`forward_backward_custom` 默认的梯度严格等于自定义 loss 的梯度，与 PyTRIO SDK 的尺度差异见第 5.5 节）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。不需要 4 张卡，1 张 ≥48GB 或 2 张 ≥24GB 的卡即可，卡越多越快，详见[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。搜索（DeepSeek Search API、Jina Reader）、训练裁判（Jev System One API）和 RACE 评分模型（DeepSeek）仍是外部 API，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢 MRLE 与 Datawhale 社区。
 
 > **代码与复现资源**
 >
 > - 本章实现：[训练](./train.py) / [淘汰赛奖励](./reward.py) / [多轮 rollout](./rollout.py) / [裁判](./judge.py)，运行步骤见[快速启动指南](./start.md)
-> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - 论文：[Tournament-GRPO: Group-Wise Tournament Rewards for Reinforcement Learning in Open-Ended Long-Form Generation(EMNLP'26)](https://arxiv.org/abs/2605.26958v2)
 > - 作者代码：[PuffYang/Tournament_GRPO](https://github.com/PuffYang/Tournament_GRPO/tree/eea826cf66705cac9ec81823f746d0ccd6074228)
 > - SwanLab：[原文（PyTRIO）20-step 训练记录](https://swanlab.cn/@MRLE/tournament-grpo/v1/x1tb4s/runs/s474uc49/chart)
@@ -39,7 +39,7 @@
 
 Tournament-GRPO 关心的是：裁判应该怎样给分，GRPO 才能拿到有用的信号。它的答案很朴素：别让裁判给每份报告单独算分，让同一道题的报告两两比赛，按胜场算 reward。
 
-原文（MRLE）把论文作者的 verl 实现搬到了 PyTRIO 上：Qwen3.5-4B LoRA，DeepSeek 搜索加 Jina 读网页，Jev 当裁判。本地版保留这套组合，只把训练与采样换成 4×A6000 上的 localtrio。下面先画一张地图，再讲算法、代码和实验。
+原文（MRLE）把论文作者的 verl 实现搬到了 PyTRIO 上：Qwen3.5-4B LoRA，DeepSeek 搜索加 Jina 读网页，Jev 当裁判。本地版保留这套组合，只把训练与采样换成在自己显卡上运行的 localtrio。下面先画一张地图，再讲算法、代码和实验。
 
 ## 0. 先看结论
 
@@ -256,7 +256,7 @@ loss = losses.mean()                                   # 整个 batch 的 assist
 | 交互预算 | 8 轮 / 7 次工具，用完直接停 | 6 轮 / 4 次工具，最后一次工具结果附收尾提示 | 研究深度变浅；新增环境提示 |
 | 裁判失败 | 随机选胜者 | 停止训练，从 checkpoint 续训 | 不会用随机 reward 更新 |
 | 训练规模 | batch 16，多 epoch，约 1,100–1,600 step | batch 8 题 × 8 条，20 step | 只能观察早期行为变化 |
-| 训练后端 | verl | 原文 PyTRIO 云端；本地版 localtrio（4×A6000） | 数值实现不逐位一致 |
+| 训练后端 | verl | 原文 PyTRIO 云端；本地版 localtrio（本地显卡） | 数值实现不逐位一致 |
 | 实验追踪 | WandB | SwanLab | 无 |
 
 淘汰赛结构（G=2、W=1、F=1、M=4）、归一化、无答案置 0、格式规则、18000 token 的 response 预算、3000 字符的工具截断和作者 prompt 都保持原样。
@@ -329,18 +329,19 @@ SwanLab：[Base 生成](https://swanlab.cn/@MRLE/tournament-grpo/runs/5cqbugvp)�
 
 本地版的资源估算如下：
 
-> 以下数字按模型规模和上面的原文记录推算，是**粗略估算，未经实测**。裁判、搜索和 Jina 限速都是外部因素，本地 GPU 再快也省不掉这部分时间。
+> 以下数字按模型规模和上面的原文记录推算，是**粗略估算，未经实测**；耗时按 4 张 48GB 卡估算。裁判、搜索和 Jina 限速都是外部因素，本地 GPU 再快也省不掉这部分时间。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU 布局 | 内置默认布局（即 `configs/4gpu.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本 |
-| GPU0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 15–25 GB（与[硬件规划](../../docs/content/guide/hardware.md)口径一致） |
-| GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
+| GPU 0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 15–25 GB（与[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)口径一致）；24GB 卡用 micro-batch 8192，仍 OOM 时降到 4096 |
+| 采样卡显存 | 每卡 vLLM 预占 85%：48GB 卡约 40 GB，24GB 卡约 20 GB（报 KV cache 不足时设置 `max_model_len: 32768`） |
 | 单个 step | rollout 约 3–6 分钟 + 裁判 224 场约 7 分钟（外部 API，与原文相近）+ 训练约 4–7 分钟（自定义 loss 要做两次前向） |
 | 20 step | 约 5–7 小时 |
 | Deep Research Bench 生成 100 题 | 约 5–20 分钟（每题贪心 1 条轨迹） |
+| 卡更少时 | 只有 rollout 随采样卡数变慢（2 张卡约慢 2–3 倍）；裁判和训练时间不变，所以 2 张卡上 20 step 约 6–11 小时 |
 
-训练时 4 张卡都被占用；想用本机模型当裁判，需要先把采样缩到两张卡，详见[快速启动指南第 6 节“可选：用本机模型当裁判”](./start.md#6-可选用本机模型当裁判)。
+训练时所有卡都被训练和采样占用；想用本机模型当裁判，需要先给它空出一张卡（一般要 3 张卡以上，例如 4 张卡时把采样缩到两张），详见[快速启动指南第 6 节“可选：用本机模型当裁判”](./start.md#6-可选用本机模型当裁判)。
 
 ## 7. 训练时最应该看哪些指标？
 
@@ -397,7 +398,7 @@ Tournament-GRPO 的改动很小，只换了 reward 的来源：
 5. [Jina Reader](https://jina.ai/reader/)
 6. [PyTrio-Jev 章节](../pytrio-jev/readme.md)
 7. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
-8. [localtrio 原理与 API 对照（含 custom loss 语义）](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+8. [localtrio 原理与 API 对照（含 custom loss 语义）](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 9. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/tournament-grpo`，原内容贡献者 [MRLE](https://mrlepro.com)）
 10. [PyTRIO 文档](https://docs.pytrio.com/docs) / [自定义 loss](https://docs.pytrio.com/docs/guide/custom_loss)（原版使用）
 11. [SwanLab 文档](https://docs.swanlab.cn/)

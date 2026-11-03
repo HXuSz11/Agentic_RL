@@ -200,10 +200,10 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 
 | | 配置（估算） | 怎么运行 |
 | --- | --- | --- |
-| 最低 | 1 张 ≥48GB，或 2 张 ≥24GB | 1 张卡：`LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU0）；2 张 24GB 卡：`LOCALTRIO_CONFIG=configs/2gpu.yaml`（训练 micro-batch 8192） |
-| 推荐 | 2 张卡 | 不写配置直接运行：GPU0 训练，GPU1 采样。卡更多时多出来的卡都会变成采样副本，评测更快 |
+| 最低 | 1 张 ≥48GB，或 2 张 ≥24GB | 1 张卡：`LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU0）；24GB 卡：`LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192，GPU 仍按卡数自动分配） |
+| 推荐 | 2 张卡 | 不写配置直接运行：GPU0 训练，其余卡各一个采样副本，卡越多评测越快。24GB 卡同样用 `configs/24gb.yaml` |
 
-`LOCALTRIO_CONFIG` 的路径相对当前目录：上面是在仓库根目录运行的写法，在 `experiments/pytrio-jev/` 内运行时写 `../../configs/...`。用 `uv run python -m localtrio info` 确认布局。
+表中路径按仓库根目录写，在 `experiments/pytrio-jev/` 内运行时改成 `../../configs/...`。用 `uv run python -m localtrio info` 确认布局。
 
 **GPU 布局**：用内置默认布局即可，不需要配置文件（4 张卡时等价于 [`configs/4gpu.yaml`](../../configs/4gpu.yaml)）：
 
@@ -217,12 +217,12 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 **显存（估算，每卡 48GB 时）**：
 
 - GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足；24GB 卡把 `trainer.max_tokens_per_microbatch` 调到 8192（约 13–18GB，`configs/2gpu.yaml` 已经这样设置）。
-- 采样卡：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。24GB 卡约 20GB，KV cache 只剩约 10GB，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len`（如 16384）。
+- 采样卡：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。24GB 卡上预占约 20GB，KV cache 只剩约 10GB，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len`（如 16384）。
 
 **耗时（估算）**：
 
 - 首次运行需要下载 Qwen3.5-4B（约 9–10GB）和数据集；
-- 训练 270 步：只用 GPU0，与卡数无关。每步是一次约 1–2 万 token 的前向 + 反向，以一张 Ampere 架构的 48GB 卡为例估计每步数秒到十几秒，加上模型加载约 0.5–1.5 小时；没装 `--extra kernels` 时 Qwen3.5 线性注意力走 PyTorch 回退实现，会明显更慢；
+- 训练 270 步：只用 GPU0，与卡数无关。每步是一次约 1–2 万 token 的前向 + 反向，以 48GB 显卡为例估计每步数秒到十几秒，加上模型加载约 0.5–1.5 小时；没装 `--extra kernels` 时 Qwen3.5 线性注意力走 PyTorch 回退实现，会明显更慢；
 - 温度校准（120 案例）+ 五项评测（约 1000 次长 prompt 前向）：按 4 张卡（3 个 vLLM 副本）估计合计十几到几十分钟；2 张卡（1 个副本）约慢 2–3 倍，单卡共用时更慢一些。
 
 ## 5. 校准：让概率"说真话"

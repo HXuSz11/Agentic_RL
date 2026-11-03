@@ -36,7 +36,7 @@ RL 训练的大部分时间花在采样上，所以多出来的卡默认都给 v
 
 | 单卡显存 | 训练卡（LoRA） | 采样卡（vLLM） | 说明 |
 | --- | --- | --- | --- |
-| 24GB（RTX 3090 / 4090） | 4B：把 `trainer.max_tokens_per_microbatch` 调到 8192 | 4B：约 10GB 留给 KV cache，长上下文章节设置 `max_model_len` | 9B 学生和 27B 教师都不建议 |
+| 24GB（RTX 3090 / 4090） | 4B：把 `trainer.max_tokens_per_microbatch` 调到 8192（直接用 `configs/24gb.yaml`） | 4B：约 10GB 留给 KV cache，长上下文章节设置 `max_model_len` | 9B 学生和 27B 教师都不建议 |
 | 32GB（RTX 5090） | 4B 宽裕 | 4B 宽裕 | 9B 训练仍偏紧 |
 | 48GB（RTX A6000 / 6000 Ada、L40S） | 4B 宽裕；9B 单卡可训（micro-batch 8192） | 4B / 9B | 单卡可以同时做训练和采样（4B） |
 | 80GB（A100 / H100） | 9B 宽裕 | 27B 教师单卡即可（约 54GB 权重） | General OPD 的 27B 教师不再需要两张卡 |
@@ -57,7 +57,8 @@ localtrio 把“训练”和“采样”放在不同的进程上，卡够时也�
 | --- | --- | --- | --- |
 | 不写配置 | 任意 | GPU 0 训练，其余采样；单卡共用 | 绝大多数章节 |
 | `configs/1gpu.yaml` | 1（≥48GB） | 训练 + 采样共卡（vLLM 40%），micro-batch 8192 | 只有一张大显存卡 |
-| `configs/2gpu.yaml` | 2（≥24GB） | GPU 0 训练（micro-batch 8192），GPU 1 采样 | 两张卡，或两张 24GB 卡 |
+| `configs/2gpu.yaml` | 2（≥24GB） | GPU 0 训练（micro-batch 8192），GPU 1 采样 | 固定只用前两张卡 |
+| `configs/24gb.yaml` | 任意（≥2，24GB） | 按卡数自动分配，训练 micro-batch 8192，可选 `max_model_len` | 24GB 显卡（RTX 3090 / 4090） |
 | `configs/4gpu.yaml` | 4 | GPU 0 训练，GPU 1–3 采样 | 与自动布局相同，只是把取值写明方便修改 |
 | `configs/4gpu-big-student.yaml` | 4 | GPU 0–1 训练（按层切分），GPU 2–3 采样 | 9B 学生（如 Spec-o3 的 9B 实验），想要更宽裕的布局时 |
 | `configs/4gpu-opd-27b.yaml` | 4（≥48GB） | GPU 0 学生训练，GPU 1 学生采样，GPU 2–3 27B 教师（TP=2） | General OPD 的 27B 教师；80GB 卡可改成教师单卡 |

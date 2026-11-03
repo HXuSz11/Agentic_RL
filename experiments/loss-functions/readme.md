@@ -10,7 +10,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原系列代码基于 PyTRIO 云端训练服务；本仓库改用 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，训练用 transformers + PEFT LoRA，采样用 vLLM），在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章没有训练代码，不需要 GPU；第 5 节补充了这三个 loss 在 localtrio 训练端的逐 token 实现。后面各章需要几张卡、多大显存，见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原系列代码基于 PyTRIO 云端训练服务；本仓库改用 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，训练用 transformers + PEFT LoRA，采样用 vLLM），在你自己的 NVIDIA 显卡上运行。本章没有训练代码，不需要 GPU；第 5 节补充了这三个 loss 在 localtrio 训练端的逐 token 实现。后面各章需要几张卡、多大显存，见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。感谢原作者的开源与分享。
 
 - 左边：Importance Sampling。模型走过一串 token，有的选择被奖励，有的选择被惩罚；loss 的工作就是把好选择的概率推高，把坏选择的概率压低。
 - 中间：PPO。模型不能因为一次奖励就猛冲，clip 像限速门，防止一步改太大。

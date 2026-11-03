@@ -5,7 +5,7 @@
 `--model` 可以传基模名称、serve 时用 --lora 注册的名字，也可以直接传本地
 sampler_weights 目录（脚本会调用 /v1/load_lora_adapter 动态挂载）。
 
-先在另一个终端启动服务（GPU 1，端口 8000）：
+先在另一个终端启动服务（GPU 1，端口 8000；只有 1 张卡时改成 --gpus 0）：
 uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --gpus 1 --port 8000 --max-model-len 16384
 
 再运行评测：
@@ -174,7 +174,7 @@ def resolve_served_model(args: argparse.Namespace, api_key: str) -> str:
             return lora_name
     except httpx.ConnectError as error:
         raise RuntimeError(
-            f"无法连接 {args.base_url}。请先在另一个终端启动本地 OpenAI 兼容服务，例如：\n  {LOCAL_SERVE_HINT}"
+            f"无法连接 {args.base_url}。请先在另一个终端启动本地 OpenAI 兼容服务，例如（只有 1 张卡时改成 --gpus 0）：\n  {LOCAL_SERVE_HINT}"
         ) from error
 
 

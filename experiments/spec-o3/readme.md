@@ -17,14 +17,14 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行。4B 用默认布局（GPU0 训练、GPU1/2/3 采样）；9B 用 `configs/4gpu-big-student.yaml`（GPU0,1 训练、GPU2,3 采样），详见[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行。默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。4B 最低 1 张 48GB 或 2 张 24GB 卡，推荐 4 张；9B 最低 2 张 48GB 卡（`configs/2gpu.yaml`），推荐 4 张 48GB 卡（`configs/4gpu-big-student.yaml`：GPU0,1 训练、GPU2,3 采样）。不同卡数的跑法见第 7 节和[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >
 > - 本章实现：[SFT](./train_sft.py) / [GRPO](./train_rl.py) / [评测](./eval.py) / [绘图](./analysis.py)，运行步骤见[快速开始](./start.md)
-> - localtrio：[原理与 API 对照（含图文输入）](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio：[原理与 API 对照（含图文输入）](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局（1 张、2 张还是 4 张卡）](../../docs/content/guide/hardware.md)
 > - 论文：[Spec-o3: A Tool-Augmented Vision-Language Agent for Rare Celestial Object Candidate Vetting via Automated Spectral Inspection](https://arxiv.org/abs/2601.06498)
 > - 作者代码：[Maxwell-Jia/spec-o3](https://github.com/Maxwell-Jia/spec-o3)
 > - 公开数据：[Cold-start SFT](https://huggingface.co/datasets/Maxwell-Jia/Spec-o3-ColdStartSFT) / [SpecVI-Bench](https://huggingface.co/datasets/Maxwell-Jia/SpecVI-Bench)
@@ -36,7 +36,7 @@
 
 任务换到了天文学。给模型一张完整光谱，它需要判断这个天体是否属于某个目标类别。如果全图里的细节看不清，模型可以指定一个波长区间，让工具重新画出局部光谱，再根据新证据继续判断。
 
-原文先用 Qwen3.5-4B 和 PyTRIO 跑了 **2 个 epoch 的 cold-start SFT，再接 1 个 epoch 的 GRPO**，随后补充了 **4B 和 9B 的 RL epoch 3** 评测。训练、工具交互和独立评测都已经走完；本地版用同一套代码在 4×A6000 上运行。下面从原文的结果开始讲。
+原文先用 Qwen3.5-4B 和 PyTRIO 跑了 **2 个 epoch 的 cold-start SFT，再接 1 个 epoch 的 GRPO**，随后补充了 **4B 和 9B 的 RL epoch 3** 评测。训练、工具交互和独立评测都已经走完；本地版用同一套代码在自己的显卡上运行。下面从原文的结果开始讲。
 
 ## 0. 先看结果：4B 答对 175 题，9B 答对 191 题
 
@@ -116,7 +116,7 @@ Spec-o3 将这种过程称为 iMCoT，即 Interleaved Multimodal Chain-of-Though
 → assistant 继续思考，再调用工具或输出最终答案
 ```
 
-训练也分成两步。Cold-start SFT 用现成的完整轨迹示范如何观察、调用工具和作答；GRPO 则让模型在训练题上自己完成交互，按最终答案与格式获得奖励。作者公开实现的 SFT 使用 LLaMA-Factory，RL 使用 VeRL；原文把这一过程接到了 PyTRIO，本地版再通过同名同参的 localtrio 接到 4×A6000 上。[作者训练说明](https://github.com/Maxwell-Jia/spec-o3#training-pipeline)
+训练也分成两步。Cold-start SFT 用现成的完整轨迹示范如何观察、调用工具和作答；GRPO 则让模型在训练题上自己完成交互，按最终答案与格式获得奖励。作者公开实现的 SFT 使用 LLaMA-Factory，RL 使用 VeRL；原文把这一过程接到了 PyTRIO，本地版再通过同名同参的 localtrio 接到本机显卡上。[作者训练说明](https://github.com/Maxwell-Jia/spec-o3#training-pipeline)
 
 原论文基模是 Qwen2.5-VL-3B/7B-Instruct。我们选择 Qwen3.5-4B 和 Qwen3.5-9B、LoRA rank 32，所以本文属于更换基模与训练栈后的方法迁移。后面的重点是这套交互与训练过程如何实现，以及我们实际测到了什么。
 
@@ -321,20 +321,27 @@ SFT 让模型学习“**思考 → 工具调用 → 图片观察 → 继续思�
 
 有了这层冷启动，后续 GRPO 就能在模型已经熟悉的交互流程上，通过最终奖励继续优化波段选择和分类判断。
 
-## 7. 本地版：在 4×A6000 上跑需要什么？
+## 7. 本地版：在自己的显卡上跑需要什么？
 
 原论文使用 **8 张 NVIDIA H100** 完成训练。[论文 §4.2](https://arxiv.org/html/2601.06498v1#S4.SS2) 原文通过 PyTRIO，用 Qwen3.5-4B LoRA 跑通了 SFT、工具交互和 GRPO，模型计算与权重存储都交给远程服务，首轮 4B 实验从看论文到完成只用了不到一天。
 
-本地版把同一套代码搬到 4 张 A6000 上。分工没有变：Python 主进程负责光谱绘图、消息组织和奖励计算；变化的是训练与采样由本机的 trainer 子进程和 vLLM 子进程执行，checkpoint 是本地目录，接口和 SwanLab 记录方式与原文一致。研究者仍然可以把时间留给交错思维链、图文输入、工具观察、reward 和评测规则。
+本地版把同一套代码搬到自己的 NVIDIA 显卡上，不要求 4 张卡。分工没有变：Python 主进程负责光谱绘图、消息组织和奖励计算；变化的是训练与采样由本机的 trainer 子进程和 vLLM 子进程执行，checkpoint 是本地目录，接口和 SwanLab 记录方式与原文一致。研究者仍然可以把时间留给交错思维链、图文输入、工具观察、reward 和评测规则。
 
 ### 7.1 GPU 布局
 
-| 基模 | 预设 | GPU0 | GPU1 | GPU2 | GPU3 |
-| --- | --- | --- | --- | --- | --- |
-| Qwen3.5-4B | 默认（不写配置，即 `configs/4gpu.yaml`） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
-| Qwen3.5-9B | `configs/4gpu-big-student.yaml` | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
+不写配置文件时，localtrio 按检测到的卡数自动分工：GPU 0 训练，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。各基模的最低与推荐配置（估算）：
 
-9B 的 SFT 和 RL 命令前加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（在 `experiments/spec-o3/` 目录运行时）。评测只需要 vLLM，4B 和 9B 都可以用默认布局，训练结束后还可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把 4 张卡都用来采样。
+| 基模 | 你的卡 | 预设（在 `experiments/spec-o3/` 目录运行时） | 分工 |
+| --- | --- | --- | --- |
+| Qwen3.5-4B | 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`，或不写配置 | 训练与采样共用 GPU0（vLLM 占 40%），约慢 3～4 倍 |
+| Qwen3.5-4B | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
+| Qwen3.5-4B | 4 张（推荐） | 不写配置（与 `configs/4gpu.yaml` 相同） | GPU0 训练，GPU1–3 采样 |
+| Qwen3.5-9B | 2 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/2gpu.yaml` | GPU0 训练（micro-batch 8192），GPU1 采样 |
+| Qwen3.5-9B | 4 张 ≥48GB（推荐） | `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml` | GPU0–1 训练（按层切分），GPU2–3 采样 |
+
+24GB 卡放不下 9B 的训练和采样；24GB 的采样卡跑 4B 时还要设置 `models.default.max_model_len: 20480`（需大于 `--max-seq-len` 16384）。速度倍数都相对 4 卡估算。
+
+第 8 节的 SFT 和 RL 命令前加上表对应的 `LOCALTRIO_CONFIG=...`（4B 用 4 张卡时不用加）。评测只需要 vLLM，4B 和 9B 都可以用默认布局；训练结束后还可以用 `LOCALTRIO_SAMPLER_GPUS` 把所有卡都用来采样（例如 4 张卡写 `0,1,2,3`）。
 
 ### 7.2 本地资源估算
 
@@ -345,13 +352,13 @@ SFT 让模型学习“**思考 → 工具调用 → 图片观察 → 继续思�
 | SFT 冷启动（2 epoch） | 0 | 6.11M | 0 |
 | 4B RL epoch 1 | 239.39M | 79.13M | 26.38M |
 
-> 以下数字按模型规模和上表 token 量推算，是**粗略估算，未经实测**；多轮工具交互的长尾生成对总耗时影响很大。
+> 以下数字按模型规模和上表 token 量推算，是**粗略估算，未经实测**；显存和时间以每卡 48GB、4 张卡（4B 默认布局，9B 用 `4gpu-big-student.yaml`）为例，2 张卡约慢 2～3 倍，1 张卡约慢 3～4 倍。多轮工具交互的长尾生成对总耗时影响很大。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| 4B 训练卡显存 | 4B bf16 权重约 9–10 GB + LoRA/AdamW + 激活，单条 16,384 token（含图片）时约 20–30 GB |
-| 9B 训练显存（双卡） | 权重约 19–20 GB 按层分到 GPU0/1，每卡约 15–25 GB |
-| 采样卡显存 | 每卡 vLLM 预占约 40 GB（`gpu_memory_utilization`：默认 0.85，9B 预设 0.88） |
+| 4B 训练卡显存 | 4B bf16 权重约 9–10 GB + LoRA/AdamW + 激活，单条 16,384 token（含图片）时约 20–30 GB；24GB 卡用 micro-batch 8192 |
+| 9B 训练显存 | 双卡时权重约 19–20 GB 按层分到 GPU0/1，每卡约 15–25 GB；只有 2 张卡时单卡训练，需要 48GB 卡 |
+| 采样卡显存 | 每卡 vLLM 按 `gpu_memory_utilization` 预占显存（默认 0.85，48GB 卡约 40 GB；9B 预设 0.88） |
 | 4B SFT 2 epoch | 约 1–2 小时 |
 | 4B RL 1 epoch（389 个 rollout batch） | 约 1.5–3 天（训练约 13–22 小时 + 多轮 rollout） |
 | 9B RL 1 epoch | 约为 4B 的 2 倍或更多（训练更慢、采样副本只有 2 个） |
@@ -367,13 +374,13 @@ RL 的 epoch 很长，建议先用 `--epochs 1` 和默认 `--save-every 100` 跑
 
 ```bash
 uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
-uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
+uv run python -m localtrio info  # 确认检测到的显卡与 GPU 布局
 uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 可选：提前下载基模权重（不执行时首次训练会自动下载）；9B 实验再加 Qwen/Qwen3.5-9B
 cd experiments/spec-o3
 uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-**下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、GPU1/2/3 采样）。部分脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
+**下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、其余卡采样，单卡时共用；少卡跑法见 7.1 节）。部分脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
 
 `localtrio download` 只是把基模下载时间提前，不执行时首次训练或评测会自动下载。`prepare_data.py` 和评测 4B 时的 `eval.py`（默认固定 `--model-revision`）从 HF 读取 tokenizer 与 image processor 后，HF 缓存里可能留下一个没有权重的快照；localtrio 会识别并跳过这种快照，照常下载完整权重。训练脚本默认 `--model-revision main`，直接读取 localtrio 实际使用的模型目录。国内网络也可以用 `--source modelscope` 提前下载，`auto` 模式会找到这份缓存；HF 无法访问、又没有提前下载时，可在训练和评测命令前加 `LOCALTRIO_MODEL_SOURCE=modelscope`，让 localtrio 不再先尝试 HF，详见 [快速开始](./start.md)。
 
@@ -422,7 +429,7 @@ uv run python train_sft.py \
 
 脚本默认只训练 1 个 epoch，因此这里显式传入 `--epochs 2`。`--model-revision` 默认是 `main`，本次 SFT 记录也使用了这一设置；需要固定 tokenizer 与 image processor 文件时，可传入本章数据准备和评测使用的 `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`。
 
-训练 9B 时，将 `--base-model` 改为 `Qwen/Qwen3.5-9B`，使用独立的 `--run-name`，并切换到双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
+训练 9B 时，将 `--base-model` 改为 `Qwen/Qwen3.5-9B`，使用独立的 `--run-name`，并按卡数切换布局。4 张 48GB 卡用双卡训练布局（GPU0,1 训练、GPU2,3 采样）；只有 2 张 48GB 卡时把配置换成 `../../configs/2gpu.yaml`（GPU0 训练、GPU1 采样）：
 
 ```bash
 LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml uv run python train_sft.py \
@@ -461,7 +468,7 @@ uv run python train_rl.py \
 
 `--max-tokens` 限制单次生成长度；`--max-seq-len` 限制包含文字、图片与工具历史的总上下文。`--max-turns 8` 是最多 8 轮 assistant 生成，最终答案也占一轮；当前实现最多执行前 7 轮的工具调用。
 
-上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模，命令前同样加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`。不同实验使用独立的 `--run-name`。
+上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模，命令前同样加 `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（只有 2 张 48GB 卡时用 `../../configs/2gpu.yaml`）。不同实验使用独立的 `--run-name`。
 
 当前脚本每 100 个累计 rollout step 保存一次 state 和 sampler，epoch 结束时也保存。这个周期保存功能是在首次 RL 实验之后补上的，便于后续运行时保留中间权重。训练日志里同时记录 rollout step 与实际 updates，两者在跳过整批更新时会有差别。
 
@@ -483,7 +490,7 @@ uv run python train_rl.py \
 
 ### 8.5 评测 4B Base、SFT，以及 4B / 9B RL
 
-下面保留开头结果表对应的生成预算。将占位符替换成各自的 **sampler_path**（训练终端打印的本地目录，形如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-name>-epoch-<N>-sampler`）。评测只启动 vLLM，9B 也可以用默认布局；训练结束后可在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`：
+下面保留开头结果表对应的生成预算。将占位符替换成各自的 **sampler_path**（训练终端打印的本地目录，形如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-name>-epoch-<N>-sampler`）。评测只启动 vLLM，9B 也可以用默认布局；训练结束后可在命令前加 `LOCALTRIO_SAMPLER_GPUS`，让所有卡都采样（例如 4 张卡写 `0,1,2,3`，2 张卡写 `0,1`）：
 
 ```bash
 # Base：不传 model-path，脚本自动追加格式提醒。

@@ -12,7 +12,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章最少 1 张 48GB 卡或 2 张 24GB 卡，卡多只是采样更快（见下文“本地资源估算”）。不需要 `trio login`、API Key，也没有计费。
 >
 > 文中标注“原文在 PyTRIO 上”的数字与经历来自原作者在 PyTRIO 云端的实验；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“先把代码跑起来”一节的实现差异说明），复现结果可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)。
 
@@ -23,7 +23,7 @@
 > - DAPO 论文：[DAPO: An Open-Source LLM Reinforcement Learning System at Scale](https://arxiv.org/abs/2503.14476)
 > - 官方项目页：[dapo-sia.github.io](https://dapo-sia.github.io/)
 > - 官方实现：[BytedTsinghua-SIA/DAPO](https://github.com/BytedTsinghua-SIA/DAPO)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第六篇。
 
@@ -48,7 +48,7 @@
 2. 仓库里的 DAPO 和 GRPO 代码应该怎么读、怎么跑；
 3. Dynamic Sampling 在真实训练里为什么会慢，以及它为什么会削弱异步 RL 本来想获得的时间效率。
 
-本地版在此基础上补充一节：在自己的 4×A6000 + vLLM 上，这笔时间账具体落在哪里。
+本地版在此基础上补充一节：在自己的显卡 + vLLM 上，这笔时间账具体落在哪里。
 
 ![DAPO 论文](./images/dapo-paper.png)
 
@@ -189,7 +189,7 @@ shaped_reward = correctness_reward + length_penalty
 ```bash
 # 在仓库根目录
 uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练加速 kernel，推荐安装
-uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU0 训练，GPU1/2/3 采样
+uv run python -m localtrio info    # 确认 GPU 布局：默认 GPU 0 训练，其余卡采样（单卡时共用）
 uv run swanlab login               # 可选；不用 SwanLab 时训练命令保留 --swanlab-mode disabled
 cd experiments/dapo
 ```
@@ -380,11 +380,11 @@ Dynamic Sampling 最容易被一句“过滤无效样本，补到 batch 满”�
 
 ## 本地 vLLM 采样下，这笔时间账落在哪里？
 
-本地版的训练循环和原文一样是同步的：每个 step 先 rollout，再做一次 `forward_backward_custom` 和 `optim_step`。放到默认的 4×A6000 布局（GPU0 训练，GPU1/2/3 各一个 vLLM 副本）上，上面的分析会具体化成三件事：
+本地版的训练循环和原文一样是同步的：每个 step 先 rollout，再做一次 `forward_backward_custom` 和 `optim_step`。以 4 张卡的默认布局为例（GPU 0 训练，GPU 1–3 各一个 vLLM 副本；卡数不同只是副本数不同），上面的分析会具体化成三件事：
 
-1. **训练卡和采样卡轮流空转。** rollout 阶段（包括所有补采 wave）GPU0 在等；参数更新阶段，3 张采样卡在等。Dynamic Sampling 多出来的每一个 wave，都会原样加到 `time/step_seconds` 上，没有任何重叠。
+1. **训练卡和采样卡轮流空转。** rollout 阶段（包括所有补采 wave）GPU 0 在等；参数更新阶段，所有采样卡在等。Dynamic Sampling 多出来的每一个 wave，都会原样加到 `time/step_seconds` 上，没有任何重叠。
 
-2. **补采 wave 很窄，却不会短多少。** 代码里每个 group 是一次 `sample_async(num_samples=8)` 请求；localtrio 按 prompt 前 512 个 token 的哈希把它固定路由到某一个 vLLM 副本（只有该副本比最空闲副本多出 8 个以上在途请求时才退回最少负载路由）。因此第一轮的 4 个 group 按哈希落位，不保证用满 3 个副本；补采只差 1 个 group 时，这 8 条 completion 全部落在同一个副本上，另外两张采样卡空闲。而小 batch 解码主要受显存带宽限制，单条序列的解码速度和大 batch 时处在同一量级，一个 wave 的时长基本由其中最长的那条 completion 决定：只有 8 条序列的补采 wave，并不比完整的第一轮快多少。
+2. **补采 wave 很窄，却不会短多少。** 代码里每个 group 是一次 `sample_async(num_samples=8)` 请求；localtrio 按 prompt 前 512 个 token 的哈希把它固定路由到某一个 vLLM 副本（只有该副本比最空闲副本多出 8 个以上在途请求时才退回最少负载路由）。因此第一轮的 4 个 group 按哈希落位，不保证每个副本都用上；补采只差 1 个 group 时，这 8 条 completion 全部落在同一个副本上，其余采样卡空闲。而小 batch 解码主要受显存带宽限制，单条序列的解码速度和大 batch 时处在同一量级，一个 wave 的时长基本由其中最长的那条 completion 决定：只有 8 条序列的补采 wave，并不比完整的第一轮快多少。
 
 3. **vLLM 的连续批处理只能合并“同时在途”的请求。** 同一轮内落在同一副本上的 group 会被 vLLM 放进同一批解码；但下一轮补采要等上一轮 reward 判定完才提交，wave 之间没有任何并行。
 
@@ -397,7 +397,7 @@ step 时间 ≈ Σ_wave（该 wave 最长 completion 的 token 数 ÷ 单序列�
 
 最坏情况仍是上面推出的 `1 + (M - 1) × B = 5` 个 wave。按下文“本地资源估算”的数量级，一个有回答跑满 4,096 token 的 wave 大约要 1～2 分钟（估算，未实测），因此 DAPO 单步的 rollout 时间会在 1 个到 5 个 wave 之间波动，这正是本地 `time/step_seconds` 波动的主要来源。GRPO 每步固定 1 个 wave，可以直接拿来做对照。
 
-如果想在本地缓解，可以考虑：补采时一次多提交几组，把 3 个副本都占满；进一步调小 `--max-tokens`；或者改成 rollout 与训练流水线化的异步架构。这些都会改变原文 Dynamic Sampling 的语义或预算，本仓库没有实现，只作为思路。
+如果想在本地缓解，可以考虑：补采时一次多提交几组，把所有采样副本都占满；进一步调小 `--max-tokens`；或者改成 rollout 与训练流水线化的异步架构。这些都会改变原文 Dynamic Sampling 的语义或预算，本仓库没有实现，只作为思路。
 
 ## Dynamic Sampling 是否值得，要同时看质量和预算
 
@@ -430,26 +430,37 @@ prefill → autoregressive sampling → reward parsing → correctness verificat
 
 所以把当前默认 completion 上限缩到 4,096，不只是让一次实验更快，也是为了降低单步 token 和 wall-clock 的波动。后续如果重新跑长上下文版本，应该同时限制**单步时间预算**、**候选 token 总预算**和**训练 token 总预算**，而不只限制 group 数量。
 
-在本地，这个波动还会体现在 GPU0 的显存峰值上：进入 loss 的 token 数随有效组数和回答长度变化，trainer 会按 `trainer.max_tokens_per_microbatch`（默认 16,384 token）把一批数据切成若干 micro-batch 再累积梯度。改回 `max_tokens=8192` 跑长上下文时如果 OOM，优先调小这个值，详见 [快速启动指南的常见问题](./start.md#常见问题)。
+在本地，这个波动还会体现在训练卡（GPU 0）的显存峰值上：进入 loss 的 token 数随有效组数和回答长度变化，trainer 会按 `trainer.max_tokens_per_microbatch`（默认 16,384 token）把一批数据切成若干 micro-batch 再累积梯度。改回 `max_tokens=8192` 跑长上下文时如果 OOM，优先调小这个值，详见 [快速启动指南的常见问题](./start.md#常见问题)。
 
 仓库同时提供了 DAPO 和 GRPO 代码，大家可以结合上面的机制说明继续学习和试跑。本文讨论的是 Dynamic Sampling 的代码行为与工程问题，不把这次未完成的 DAPO run 当作效果对比。
 
 ## 本地资源估算（估算，未实测）
 
-默认布局不需要任何配置文件（等价于 `configs/4gpu.yaml`）：
+不需要 4 张卡。本章只用一个基模（`Qwen/Qwen3.5-4B`），不写配置文件时 localtrio 按检测到的卡数分配：GPU 0 训练，其余卡各一个 vLLM 采样副本；只有 1 张卡时两者共用。最低与推荐配置（详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0，vLLM 占 40%） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+
+表中路径按仓库根目录写；按上文在 `experiments/dapo` 下运行时写 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`。
+
+24GB 卡上，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len: 16384`（训练需要 `max_prompt_tokens + max_tokens` = 4,608，AIME25 评测约 12,300）；改回 8,192 token 的长 CoT 后训练卡仍 OOM 时，再把 micro-batch 降到 4096。
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；其中 lm_head 分块计算 logprob 约占 1～3GB（估算，见快速启动的常见问题） |
-| GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
+| GPU 0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB（micro-batch 16384；24GB 卡用 8192，约 13～18GB）；其中 lm_head 分块计算 logprob 约占 1～3GB（估算，见快速启动的常见问题） |
+| 其余每张卡 | 各一个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 按 `gpu_memory_utilization=0.85` 预分配每卡 85%（权重 + KV cache）：48GB 卡约 40GB，24GB 卡约 20GB |
 
-时间的数量级可以这样推算：
+时间的数量级以 4 张 48GB 卡为例推算：
 
-- **采样**：A6000 显存带宽约 768GB/s，4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，单条序列的解码速度理论上限约 80～90 token/s，按实际 40～60 token/s 估计，一个跑满 4,096 token 的 wave 约 1～2 分钟，8,192 token 约 2～4 分钟。
-- **训练**：custom loss 的一次更新约等于 1 次无梯度前向 + 1 次带梯度的前向和反向（含梯度检查点重算），约 8 × 参数量 FLOPs/token，4B 模型约 32 GFLOP/token。每步 32 条 completion、平均 2～3k token 时约 2～3 PFLOP；A6000 bf16 理论峰值约 150 TFLOPS，按实际 40～60 TFLOPS 估计约 1 分钟。
+- **采样**：按显存带宽约 768GB/s 估算（带宽更高的卡解码更快），4B 模型 bf16 每解码一步要读一遍约 8～9GB 权重，单条序列的解码速度理论上限约 80～90 token/s，按实际 40～60 token/s 估计，一个跑满 4,096 token 的 wave 约 1～2 分钟，8,192 token 约 2～4 分钟。
+- **训练**：custom loss 的一次更新约等于 1 次无梯度前向 + 1 次带梯度的前向和反向（含梯度检查点重算），约 8 × 参数量 FLOPs/token，4B 模型约 32 GFLOP/token。每步 32 条 completion、平均 2～3k token 时约 2～3 PFLOP；按 bf16 理论峰值约 150 TFLOPS、实际 40～60 TFLOPS 估计约 1 分钟。
 - **合计**：GRPO 每步约 2～4 分钟；DAPO 视补采 wave 数（1～5 个）约 2～10 分钟。默认 10 step 的试跑大约 0.5～1.5 小时，不含首次下载模型和启动 vLLM 的时间。
+- **卡更少时**：2 张卡只有 1 个采样副本，通用估算约慢 2～3 倍；本章每个 wave 只有几组请求、时长主要由最长那条回答决定，差距可能小一些。
 
-以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_seconds` 为准，更完整的显存规划见 [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)。
+以上都是按硬件参数推算的数量级，不是实测值；没有安装 `--extra kernels` 时，Qwen3.5 线性注意力的训练会明显变慢。实际耗时以 SwanLab 里的 `time/step_seconds` 为准，更完整的显存规划见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 
 ## 自己运行时应该重点看什么？
 
@@ -511,7 +522,7 @@ rollout 会反复补采、反复等待，
 
 在全手搓实现 DAPO 的时候，我有很大的感触。之前在用 transformers 或者是 verl 训练模型的时候，假如说这次训练得很慢，我只会怀疑是不是我的卡不够好，或者说是我的 verl 哪里配置得不对，我绝对不会怀疑是算法的原因，因为 transformers 的 trainer 和 verl 的配置对我来说它是一个黑盒。但是这一次 dapo 的全部代码是我一行一行 review 过的，所以我很清楚 dapo 发生了什么事情，我也很清楚 dapo 为什么会这么慢。
 
-原作者把这归功于 PyTRIO：核心算法代码可以从 0 到 1 自己写，不必去关注框架、配置和训推一体。本地版用 localtrio 保留了同一套接口，训练和采样引擎虽然搬到了自己的 4 张 A6000 上，这份 DAPO 代码依然只需要关心核心算法有没有正确实现；而且 GPU 什么时候在算、什么时候在等，在本地都能直接用 `nvidia-smi` 看到。
+原作者把这归功于 PyTRIO：核心算法代码可以从 0 到 1 自己写，不必去关注框架、配置和训推一体。本地版用 localtrio 保留了同一套接口，训练和采样引擎虽然搬到了自己的显卡上，这份 DAPO 代码依然只需要关心核心算法有没有正确实现；而且 GPU 什么时候在算、什么时候在等，在本地都能直接用 `nvidia-smi` 看到。
 
 ## 参考资料
 
@@ -530,6 +541,6 @@ rollout 会反复补采、反复等待，
 
 1. 本地版代码：本目录的 [`train.py`](./train.py)、[`rollout.py`](./rollout.py)、[`reward.py`](./reward.py)、[`eval.py`](./eval.py)，运行方式见 [快速启动指南](./start.md)
 2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md)
-3. [4×A6000 显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
+3. [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 4. 原版（PyTRIO）完整代码：[Datawhale 原教程 · experiments/dapo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/dapo)
 5. 原版使用的 [PyTRIO 文档](https://docs.pytrio.com/docs)

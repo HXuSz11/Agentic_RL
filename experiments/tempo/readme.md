@@ -17,7 +17,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000 48GB 上运行，不需要登录，也没有计费。文中的冒烟运行日志和 SwanLab 曲线都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文基于 PyTRIO 云端训练服务完成；这里的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地实现：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行，不需要登录，也没有计费。默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。本章最低 1 张 48GB 或 2 张 24GB 卡，推荐 4 张（见 5.1 节）。文中的冒烟运行日志和 SwanLab 曲线都是**原文在 PyTRIO 上的结果**，本地复现的数值可能有差异。感谢原作者的开源分享。
 
 > **代码与复现资源**
 >
@@ -25,7 +25,7 @@
 > - 原版代码：[Datawhale 原教程 · experiments/tempo](https://github.com/datawhalechina/agentic-rl-lab/tree/main/experiments/tempo)
 > - 算法来源：[TEMPO: Test-Time-Scaled Value Estimation with Macro-Step Policy Optimization](https://studio.dots.ai/dots/tempo-blog.html)（小红书 Dots 团队博客）
 > - 复现笔记：[dev.md](./dev.md)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局（1 张、2 张还是 4 张卡）](../../docs/content/guide/hardware.md)
 
 这是"接下来我将复现 10 篇强化学习算法"系列的第 9.2 篇。
 
@@ -142,19 +142,27 @@ token 侧：token_prefix   —— 续跑用的真实 token 前缀，保证下一
 
 ## 5. 训练怎么跑
 
-本章没有单独的快速启动页，本地运行需要的全部步骤都在这一节。下面的命令都从**仓库根目录**运行；所有计算都在本机完成，不需要 `trio login`，不需要 API Key，也没有计费。原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存规划见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+本章没有单独的快速启动页，本地运行需要的全部步骤都在这一节。下面的命令都从**仓库根目录**运行；所有计算都在本机完成，不需要 `trio login`，不需要 API Key，也没有计费。原理与 API 对照见 [localtrio 指南](../../docs/content/guide/localtrio.md)，显存规划见 [硬件指南](../../docs/content/guide/hardware.md)。
 
 ### 5.1 GPU 布局
 
-TEMPO 只有一份参数：actor 和生成式 critic 是同一个基模 `Qwen/Qwen3.5-4B` 加同一个 LoRA，调用的是同一个 `SamplingClient`，因此共用默认采样池。**直接使用默认布局即可，不需要任何配置文件**：
+TEMPO 只有一份参数：actor 和生成式 critic 是同一个基模 `Qwen/Qwen3.5-4B` 加同一个 LoRA，调用的是同一个 `SamplingClient`，因此共用默认采样池，critic 不需要额外的卡。**通常直接使用默认布局即可，不需要配置文件**（1 张卡或 24GB 卡见下面第二张表），localtrio 按检测到的卡数自动分工：
 
 | 设备 | 角色 |
 | --- | --- |
 | GPU 0 | LoRA 训练（transformers + PEFT，bf16 + 梯度检查点），actor 与 critic 的 Datum 在同一次 `forward_backward` 里更新 |
-| GPU 1、2、3 | vLLM 采样，3 个副本做 data parallel；actor rollout、终点估值、起点估值共用，每个 update 热加载最新 LoRA |
+| 其余 GPU | vLLM 采样，每卡一个副本做 data parallel；actor rollout、终点估值、起点估值共用，每个 update 热加载最新 LoRA；只有 1 张卡时与训练共用 GPU 0 |
 | CPU | ALFWorld / TextWorld 环境；恢复中间状态时新开环境并重放动作历史 |
 
-默认布局与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同。查看本机实际生效的布局：
+不要求 4 张卡：
+
+| 你的卡 | 怎么跑（速度相对 4 卡，估算） |
+| --- | --- |
+| 1 张 ≥48GB | `LOCALTRIO_CONFIG=configs/1gpu.yaml`（自动布局也会这样分），约慢 3～4 倍 |
+| 2 张 ≥24GB | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
+| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同 |
+
+24GB 的采样卡还要设置 `max_model_len: 16384`，见 5.6 节。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info
@@ -252,29 +260,30 @@ uv run --extra alfworld python experiments/alfworld/eval.py \
 
 ### 5.5 本地资源估算
 
-> 以下是按模型规模、本章配置和 A6000 算力做的**粗略估算，未经实测**，实际耗时取决于软件版本、CPU 性能和轨迹长度分布。
+> 以下是按模型规模、本章配置和 48GB 显卡（Ampere 架构）算力做的**粗略估算，未经实测**，按 4 张 48GB 卡（GPU 0 训练、GPU 1–3 采样）计算；实际耗时取决于显卡型号、软件版本、CPU 性能和轨迹长度分布。
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 0 显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 12K token 单条序列的激活，峰值约 20～35GB |
-| GPU 1–3 显存 | 每卡按 `gpu_memory_utilization=0.85` 预占约 40GB，权重之外用作 KV cache |
+| 最低 / 推荐配置 | 最低 1 张 48GB 或 2 张 24GB（见 5.1 节），推荐 4 张卡 |
+| 训练卡（GPU 0）显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 12K token 单条序列的激活，峰值约 20～35GB；24GB 卡用 micro-batch 8192 |
+| 采样卡显存 | 每卡按 `gpu_memory_utilization=0.85` 预占显存的 85%（48GB 卡约 40GB），权重之外用作 KV cache |
 | warm-up 单次更新 | 16 条完整轨迹 + 每个边界状态 K 次 critic 估值 + critic 训练，约 4～8 分钟 |
 | TD 单次更新 | 16 条 10 轮分支 + 终点 / 起点估值 + 合并训练，约 2～5 分钟 |
 | 冒烟测试（4 + 4） | 约 0.5～1 小时，含模型加载与 vLLM 启动 |
-| 正式规模（4 + 40） | 约 2～4 小时 |
+| 正式规模（4 + 40） | 约 2～4 小时；2 张卡约慢 2～3 倍，1 张卡约慢 3～4 倍 |
 | CPU | 每次只有 16 个左右的 TextWorld 环境，压力远小于第 8 篇；读档时重放动作历史有额外的 game file 加载开销 |
 
 ### 5.6 常见问题
 
-- **训练进程（GPU 0）OOM**：确认装了 `--extra kernels`，再写一份配置文件调小 `trainer.max_tokens_per_microbatch`（默认 16384，可改 8192）或 `trainer.logits_chunk_size`（默认 1024，可改 512），用 `LOCALTRIO_CONFIG=<文件>` 运行。单条超过 micro-batch 上限的序列会单独成批，所以一条 12K 序列无论如何都会单独前向。
+- **训练进程（GPU 0）OOM**：确认装了 `--extra kernels`，再写一份配置文件调小 `trainer.max_tokens_per_microbatch`（默认 16384，可改 8192；24GB 卡仍 OOM 时改 4096）或 `trainer.logits_chunk_size`（默认 1024，可改 512），用 `LOCALTRIO_CONFIG=<文件>` 运行。单条超过 micro-batch 上限的序列会单独成批，所以一条 12K 序列无论如何都会单独前向。
 - **vLLM OOM**：在配置的 `models.default` 下调小 `gpu_memory_utilization`（如 0.80）或 `max_num_seqs`。
 - **vLLM 报 LoRA 模块不支持**（例如线性注意力的 `in_proj_*` / `out_proj`）：配置里写 `trainer: {lora_target_modules: standard}`，只训练 q/k/v/o + gate/up/down。这会进一步缩小 LoRA 的作用范围，结果可能与原文不同。
 - **本地结果和原文不一样**：原文结果来自 PyTRIO 云端。本地的 LoRA 实现细节（如 `lora_alpha`、作用模块、默认不训练 `lm_head`，见 5.3 节末尾）、采样引擎数值和随机种子行为都可能不同，加上在线 rollout 本身方差较大，数值有差异是正常的。想让 LoRA 也覆盖 `lm_head`，在配置里加 `trainer: {allow_unembed: true}`，前提是你的 vLLM 能加载带 `lm_head` 的 adapter。
-- **vLLM 启动时报 `max_model_len` 超过 KV cache 容量**：在 `models.default` 下设置 `max_model_len: 16384`。
-- **只有一张 GPU**：使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0，速度会慢很多。
+- **vLLM 启动时报 `max_model_len` 超过 KV cache 容量**（24GB 采样卡上常见）：在 `models.default` 下设置 `max_model_len: 16384`。
+- **只有一张 GPU**：需要 ≥48GB 的卡，使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0（vLLM 占 40% 显存），速度约为 4 卡的 1/3～1/4。24GB / 32GB 单卡放不下本章的正式配置。
 - **查看 trainer / vLLM 日志**：默认在 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。
 
-一份保守的显存配置示例（文件可以放在任意位置）：
+一份保守的显存配置示例（文件可以放在任意位置，24GB 卡也可以从这份开始）：
 
 ```yaml
 # ~/localtrio-tempo.yaml
@@ -284,7 +293,7 @@ trainer:
   logits_chunk_size: 512
 models:
   default:
-    gpus: [1, 2, 3]
+    gpus: [1, 2, 3]          # 按自己的卡数改，例如 2 张卡写 [1]
     gpu_memory_utilization: 0.80
     max_model_len: 16384
 ```
@@ -372,4 +381,4 @@ critic 侧的曲线是这一篇真正的验收图：
 
 TEMPO 把"长程任务的 RL"拆成了三件互相咬合的小事：优化单位降到 macro-step，让训练信号提前产生；截断尾部交给会推理的生成式 critic，让信用分配落在该落的地方；actor 和 critic 共享参数、共用一套 GRPO，让两份能力互相迁移。复现下来最大的感受是——它的"算法创新"几乎全部落在编排层（状态存取、信号拼装），训练与采样后端自始至终只需要标准的 sample / logprob / forward_backward，无论后端是 PyTRIO 云端还是本地的 localtrio。**当一个方法的核心机制全部长在训练循环里，它离工程落地就很近了。**
 
-这一篇只跑了冒烟规模——对照第 8 篇的完整训练，算法级复现对算力相当友好：本地 4×A6000 上，冒烟测试大约一小时以内就能跑完（估算，未实测）。等论文正式发布、超参公开，9.x 系列大概率还会有它的续集。
+这一篇只跑了冒烟规模——对照第 8 篇的完整训练，算法级复现对算力相当友好：本地按 4 张 48GB 卡估算，冒烟测试大约一小时以内就能跑完；只有 1～2 张卡也能跑，只是更慢（估算，未实测）。等论文正式发布、超参公开，9.x 系列大概率还会有它的续集。

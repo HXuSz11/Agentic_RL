@@ -13,7 +13,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 0.2.7 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在 4×RTX A6000（48GB）上运行：GPU0 做 LoRA 训练，GPU1～3 各跑一个支持图文输入的 vLLM 采样副本。文中标注“原文在 PyTRIO 上的结果”的数字与图表来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文代码基于 PyTRIO 0.2.7 云端训练服务；本仓库的代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个支持图文输入的 vLLM 采样副本；只有 1 张卡时两者共用。本章最少 1 张 48GB 卡或 2 张 24GB 卡，卡多只是采样更快（见第 4 节末尾的“本地资源估算”）。文中标注“原文在 PyTRIO 上的结果”的数字与图表来自原作者的云端实验，本地复现的数值可能有差异。感谢原作者的开源与分享。
 
 > **代码与复现资源**
 >
@@ -21,7 +21,7 @@
 > - 快速启动：[`start.md`](./start.md)
 > - 数据集：[`hz2475/geoQA`](https://huggingface.co/datasets/hz2475/geoQA)
 > - GRPO 来源：[DeepSeekMath](https://arxiv.org/abs/2402.03300)
-> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [4×A6000 硬件规划](../../docs/content/guide/hardware.md)
+> - localtrio 指南：[原理与 API 对照](../../docs/content/guide/localtrio.md) · [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - 原版 PyTRIO 文档：[docs.pytrio.com](https://docs.pytrio.com/docs)（仅供对照）
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第九篇。
@@ -224,7 +224,7 @@ datum = trio.Datum(
 
 ## 3. 如何启动训练？
 
-所有命令都从仓库根目录运行。项目要求 Python 3.12 及以上，训练与采样依赖（torch、transformers、peft、vLLM）都写在根目录的 `pyproject.toml` 里。本章使用默认 GPU 布局（GPU0 训练、GPU1～3 采样），不需要配置文件，也不需要 `trio login`。
+所有命令都从仓库根目录运行。项目要求 Python 3.12 及以上，训练与采样依赖（torch、transformers、peft、vLLM）都写在根目录的 `pyproject.toml` 里。本章使用默认 GPU 布局（GPU 0 训练、其余卡各一个采样副本，只有 1 张卡时共用 GPU 0），不需要配置文件，也不需要 `trio login`。只有 1 张 48GB 卡时在命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，24GB 卡（2 张或更多）时加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（卡数与速度见下文“本地资源估算”）。
 
 ### 3.1 安装依赖
 
@@ -243,7 +243,7 @@ uv run python experiments/vision-grpo/download-dataset.py
 
 ### 3.3 先跑 1 step
 
-第一次运行会下载 Qwen3.5-4B 并启动 1 个 trainer、3 个 vLLM 子进程，需要几分钟。建议先用一个很小的 batch 检查图像、token 对齐、reward 和异步 API：
+第一次运行会下载 Qwen3.5-4B 并启动 1 个 trainer 和每张采样卡一个 vLLM 子进程，需要几分钟。建议先用一个很小的 batch 检查图像、token 对齐、reward 和异步 API：
 
 ```bash
 uv run python experiments/vision-grpo/train.py \
@@ -310,17 +310,24 @@ State 权重：/home/<you>/.cache/localtrio/runs/<run_id>/states/vision-grpo-qwe
 
 > 以下数字是按模型大小、默认参数和原文记录的 token 量推算的**估算值，未实测**，实际取决于驱动、vLLM / transformers 版本、是否安装 `kernels`、图片尺寸和生成长度。
 
-原文的 20-step 会话（`batch-size 8 × group-size 8`）记录了约 0.62M 采样 token 和 0.40M 训练 token，平均每步约 3 万采样 token、2 万训练 token。按这个量级估算本地开销：
+原文的 20-step 会话（`batch-size 8 × group-size 8`）记录了约 0.62M 采样 token 和 0.40M 训练 token，平均每步约 3 万采样 token、2 万训练 token。按这个量级估算本地开销。
+
+本章需要几张卡（与 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md) 一致）：
+
+| 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
+| --- | --- | --- |
+| 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与 vLLM 共卡，vLLM 占 40%） | 约 1/3～1/4 |
+| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 `configs/4gpu.yaml` 相同；3 张、8 张卡也直接运行 | 基准 |
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU 布局 | 默认布局（`configs/4gpu.yaml`，与内置默认值相同） |
-| GPU0（训练） | Qwen3.5-4B bf16 权重（含视觉塔）约 9～10 GB + LoRA / AdamW 约 1～2 GB + 激活，合计约 15～25 GB；图文样本与文本样本一样按 `max_tokens_per_microbatch` 打包（视觉 token 计入长度） |
-| GPU1～3（采样） | 每卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占约 40 GB |
-| 首次启动 | 下载模型约 9～10 GB；加载 4 个引擎约 2～5 分钟 |
-| 每个 step | 采样 + 保存 / 热加载 LoRA + 训练，约 0.5～2 分钟 |
-| 20-step 试跑 | 约 15～40 分钟 |
-| 100-step 正式训练 | 约 1～3 小时 |
+| GPU 0（训练） | Qwen3.5-4B bf16 权重（含视觉塔）约 9～10 GB + LoRA / AdamW 约 1～2 GB + 激活，合计约 15～25 GB；图文样本与文本样本一样按 `max_tokens_per_microbatch` 打包（视觉 token 计入长度），24GB 卡把它调到 8192 |
+| 其余卡（采样） | 每卡一个 vLLM 副本，按 `gpu_memory_utilization=0.85` 预占 85% 显存：48GB 卡约 40 GB，24GB 卡约 20 GB（启动报 KV cache 不足时设置 `max_model_len`） |
+| 首次启动 | 下载模型约 9～10 GB；加载各引擎约 2～5 分钟 |
+| 每个 step | 按 4 张 48GB 卡估算：采样 + 保存 / 热加载 LoRA + 训练，约 0.5～2 分钟 |
+| 20-step 试跑 | 按 4 张卡估算，约 15～40 分钟 |
+| 100-step 正式训练 | 按 4 张卡估算，约 1～3 小时 |
 | 评测 100 题 | 引擎启动之外约几分钟 |
 | 磁盘 | 每次保存一份 sampler 权重（bf16，几十到几百 MB）和一份带 AdamW 状态的 state（约为前者数倍），100 steps、`--save-every 25` 共保存 4 次 |
 
@@ -351,7 +358,7 @@ uv run python experiments/vision-grpo/eval.py \
 | seed | 42 |
 | temperature | 0.0 |
 | max tokens | 1,024 |
-| 并发方式 | 同一个 sampler 上并发 `sample_async()`（localtrio 分发到多个 vLLM 副本） |
+| 并发方式 | 同一个 sampler 上并发 `sample_async()`（localtrio 分发到各个 vLLM 副本） |
 
 原文的评测结果如下（**原文在 PyTRIO 上的结果**）：
 

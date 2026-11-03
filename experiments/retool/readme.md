@@ -12,14 +12,14 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行，默认 GPU0 训练、GPU1/2/3 采样，详见[硬件规划](../../docs/content/guide/hardware.md)。代码解释器沙箱本来就在本地 CPU 上运行，保持不变。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)的本地 GPU 版本。原文的训练与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参：transformers + PEFT 训练 LoRA，vLLM 采样）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本，只有 1 张卡时两者共用。不需要 4 张卡，1 张 ≥48GB 或 2 张 ≥24GB 的卡即可，卡越多越快，详见[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。代码解释器沙箱本来就在本地 CPU 上运行，保持不变。
 >
 > 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。标题里的“两杯瑞幸”指原文的云端账单。感谢原作者（[知乎](https://www.zhihu.com/people/feng-qi-xia-pian) / [小红书](https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c)）与 Datawhale 社区。
 
 > **代码与复现资源**
 >
 > - 本章代码：[`train.py`](./train.py) / [`rollout.py`](./rollout.py) / [`sandbox.py`](./sandbox.py) / [`eval.py`](./eval.py)，运行步骤见[快速启动指南](./start.md)
-> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+> - localtrio：[原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 > - SwanLab 训练记录（原文，PyTRIO）：[查看完整实验曲线](https://swanlab.cn/@kmno4/llm-agent-rl-lab-retool/overview)
 > - ReTool 论文：[ReTool: Reinforcement Learning for Strategic Tool Use in LLMs](https://arxiv.org/abs/2504.11536)
 
@@ -39,7 +39,7 @@
 
 > 模型一边打草稿一边做题，算不动的地方随手写段代码跑一下，考完只看最后答案对不对——没人教它什么时候该用计算器，这个习惯是它自己练出来的。
 
-先说成本。原文在 PyTRIO 上做 20-step 验证跑、再评测 Base 和 Step 20，合计约 ¥31.66，正好两杯瑞幸，标题由此而来。本地版没有这笔云端费用，代价换成占用一台 4×A6000 的时间，估算见后面的[本地资源估算](#本地资源估算)。
+先说成本。原文在 PyTRIO 上做 20-step 验证跑、再评测 Base 和 Step 20，合计约 ¥31.66，正好两杯瑞幸，标题由此而来。本地版没有这笔云端费用，代价换成占用自己显卡的时间，估算见后面的[本地资源估算](#本地资源估算)。
 
 原文先用 20 个 step 做了一次验证跑，确认闭环成立。这 20 个 step 里已经能看到行为变化（以下为原文在 PyTRIO 上的结果）：
 
@@ -95,7 +95,7 @@ ReTool 的思路是：既然人做数学题会用计算器，那就让模型在�
 - **本地执行沙箱**（[`sandbox.py`](./sandbox.py)）：每段代码起一个全新 Python 进程执行，带超时和资源约束；
 - **结果奖励**（[`reward.py`](./reward.py)）：只看最终 `\boxed{}` 答案的数学等价判定，对 +1 / 错 −1。
 
-在此之上，多轮工具轨迹的 rollout 状态机、GRPO 组内 advantage 和训练循环，沿用的是这个系列前几篇已经验证过的骨架；本地版的训练循环通过 localtrio 跑在 4×A6000 上，代码与原文相同。
+在此之上，多轮工具轨迹的 rollout 状态机、GRPO 组内 advantage 和训练循环，沿用的是这个系列前几篇已经验证过的骨架；本地版的训练循环通过 localtrio 跑在自己的显卡上，代码与原文相同。
 
 复现架构如下，三个阶段对应的预算和硬约束都标在图里：
 
@@ -163,7 +163,7 @@ Format 没有到 100% 的主要原因不是模型学不会，而是预算：AIME
 | --- | --- |
 | Base Model | `Qwen/Qwen3.5-4B` |
 | 训练方式 | LoRA rank 32（本地 localtrio：transformers + PEFT；原文为 PyTRIO 训练客户端） |
-| GPU 布局 | GPU0 训练，GPU1/2/3 各一个 vLLM 采样副本（4×A6000 48GB） |
+| GPU 布局 | GPU 0 训练，其余卡各一个 vLLM 采样副本；只有 1 张卡时共用 |
 | 训练数据 | `BytedTsinghua-SIA/DAPO-Math-17k` → `datasets/train.jsonl` |
 | 每个 step | 8 道问题 × group 8 = 64 条轨迹 |
 | 轮次预算 | `max_code_calls=4`、`max_assistant_turns=6` |
@@ -176,21 +176,22 @@ Format 没有到 100% 的主要原因不是模型学不会，而是预算：AIME
 | Checkpoint | 200 步轨迹每 50 step 保存（验证跑每 5 step） |
 | 随机种子 | 42 |
 
-与官方 recipe 的主要差异：官方 `train_batch_size=512`、`n_resp_per_prompt=16`、max seq 16384、`max_turns=8`、actor_lr `1e-6`，论文用 Qwen2.5-32B 全量训练；我们按配额等比缩小，并用 LoRA 代替全量。官方 released 代码里答错时按工具轮数减免惩罚的 shaping（`score = min(0, score + (num_turns - 2) / 2 * 0.1)`）与论文“outcome-only”的说法不一致，本文跟随论文，不加 shaping。本地版沿用以上全部超参，没有为 4×A6000 做改动。
+与官方 recipe 的主要差异：官方 `train_batch_size=512`、`n_resp_per_prompt=16`、max seq 16384、`max_turns=8`、actor_lr `1e-6`，论文用 Qwen2.5-32B 全量训练；我们按配额等比缩小，并用 LoRA 代替全量。官方 released 代码里答错时按工具轮数减免惩罚的 shaping（`score = min(0, score + (num_turns - 2) / 2 * 0.1)`）与论文“outcome-only”的说法不一致，本文跟随论文，不加 shaping。本地版沿用以上全部超参，也不随卡数改动：卡少时只是慢。
 
 ## 本地资源估算
 
-> 以下数字按模型规模和原文记录的 token 用量（200 step：约 15.97M train / 15.84M sample token，即每步约 8 万训练 token、8 万采样 token）推算，是**粗略估算，未经实测**。
+> 以下数字按模型规模和原文记录的 token 用量（200 step：约 15.97M train / 15.84M sample token，即每步约 8 万训练 token、8 万采样 token）推算，是**粗略估算，未经实测**；耗时按 4 张 48GB 卡估算。
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| GPU 布局 | 内置默认布局（即 `configs/4gpu.yaml`）：GPU0 训练，GPU1/2/3 各一个 vLLM 副本；沙箱在 CPU |
-| GPU0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加 LoRA/AdamW 与梯度检查点激活，单条 ≤ 8,192 token 时约 15–25 GB |
-| GPU1–3 采样显存 | 每卡 vLLM 预占约 40 GB（`gpu_memory_utilization=0.85`） |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。默认布局按卡数自动分配，沙箱在 CPU |
+| GPU 0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加 LoRA/AdamW 与梯度检查点激活，单条 ≤ 8,192 token 时约 15–25 GB；24GB 卡用 micro-batch 8192，约 13–18 GB |
+| 采样卡显存 | 每卡 vLLM 预占 85%（`gpu_memory_utilization=0.85`）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡报 KV cache 不足时设置 `max_model_len: 10240` |
 | CPU | 沙箱默认 8 个并发子进程（`--sandbox-workers`），每段代码最长 30 秒 |
 | 单个 step | rollout 最多 6 轮串行生成 + 代码执行，约 2–4 分钟；训练约 1–1.5 分钟 |
 | 20 step / 200 step | 约 1–1.8 小时 / 约 10–18 小时 |
 | AIME25 评测一次 | 360 条轨迹，约 10–25 分钟 |
+| 卡更少时 | 2 张卡约慢 2–3 倍，1 张卡约慢 3–4 倍 |
 
 ## ReTool 的训练闭环详细拆解
 
@@ -328,11 +329,11 @@ sandbox/latency:       0.36s → 1.4s  # 代码变复杂，执行时间自然变
 
 ```bash
 uv sync --extra kernels          # 含 torch / transformers / peft / vllm，kernels 为 Qwen3.5 线性注意力训练加速
-uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
+uv run python -m localtrio info  # 查看检测到的 GPU 与当前布局
 uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-不需要 `trio login`，也没有训练计费：GPU0 跑 LoRA 训练，GPU1/2/3 跑 vLLM 采样，代码解释器跑在本地 subprocess 沙箱里，不需要任何配置文件。
+不需要 `trio login`，也没有训练计费：GPU 0 跑 LoRA 训练，其余卡跑 vLLM 采样（只有 1 张卡时共用），代码解释器跑在本地 subprocess 沙箱里，不需要任何配置文件；只有 1 张 48GB 卡或 2 张 24GB 卡时的写法见[快速启动指南第 2 节](./start.md#2-gpu-布局)。
 
 ### 2. 下载并整理训练数据
 
@@ -404,7 +405,7 @@ uv run python experiments/retool/eval.py \
     --output experiments/retool/eval-results/aime25-retool-step200.jsonl
 ```
 
-评测脚本还支持 `--mode text-only`（禁用工具），用于对比 text-only 基线。评测只启动 vLLM；训练结束后可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，用 4 张卡采样。
+评测脚本还支持 `--mode text-only`（禁用工具），用于对比 text-only 基线。评测只启动 vLLM；训练结束后可以在命令前把所有卡都列给采样（4 张卡写 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，2 张卡写 `0,1`，1 张卡写 `0`）。
 
 ### 6. 绘制 checkpoint 对比图
 
@@ -442,7 +443,7 @@ uv run python experiments/retool/analysis.py
 
 ## 这次复现有哪些边界？
 
-- **轨迹预算 8k vs 论文 16k**：这是原文为省配额做的最大妥协，直接后果是 AIME 长推理被截断，Format 停在 76% 而不是更高。预算翻倍是最值得先试的改进；本地版没有配额限制，可以自行尝试 `--max-trajectory-tokens 16384`（同时要把 `train.py` 里的 `MAX_TRAIN_CONTEXT_TOKENS` 调到 16384，单条 16k 的样本在 48GB 训练卡上估计仍能放下，未实测）。本文默认仍用 8k，与原文一致。
+- **轨迹预算 8k vs 论文 16k**：这是原文为省配额做的最大妥协，直接后果是 AIME 长推理被截断，Format 停在 76% 而不是更高。预算翻倍是最值得先试的改进；本地版没有配额限制，可以自行尝试 `--max-trajectory-tokens 16384`（同时要把 `train.py` 里的 `MAX_TRAIN_CONTEXT_TOKENS` 调到 16384，设置过 `max_model_len` 的也要调到 16384 以上；单条 16k 的样本在 48GB 训练卡上估计仍能放下，未实测）。本文默认仍用 8k，与原文一致。
 - **本地沙箱 ≠ 云沙箱**：`python -c` + 30s 超时 + `RLIMIT_CPU` 能兜住 4B 模型数学代码的绝大多数意外（死循环、超时），但文件读写只靠 system prompt 软约束，macOS 上内存限制也不可靠——不要无人值守跑。
 - **跳过 cold-start SFT**：对 Qwen3.5-4B 成立（base 工具调用率就够高），换基座不一定成立。
 - **未实现 dual-clip**：官方 recipe 的 `clip_ratio_c=10.0` 在内置 `ppo` 里不支持（PyTRIO 和 localtrio 都一样），本文忽略。
@@ -461,7 +462,7 @@ ReTool 是这个系列里“工程上最省事、味道上最不同”的一篇�
 模型学会的顺序是：先调规范，再写能跑的代码，最后写对解题有用的代码。
 ```
 
-这篇再次验证了同一件事：把检索、执行这类环境交互做成“模型原生工具 + 本地轻量沙箱”，Agentic RL 的复现门槛可以压得很低。原文用云端训练把门槛压到了一台 MacBook Air 加一顿下午茶；本地版则把同一套代码搬到一台 4×A6000 工作站上，20 步验证跑估计一两个小时就能出结果。
+这篇再次验证了同一件事：把检索、执行这类环境交互做成“模型原生工具 + 本地轻量沙箱”，Agentic RL 的复现门槛可以压得很低。原文用云端训练把门槛压到了一台 MacBook Air 加一顿下午茶；本地版则把同一套代码搬到自己的显卡上（1 张 48GB 或 2 张 24GB 起步），4 张 48GB 卡时 20 步验证跑估计一两个小时就能出结果。
 
 ## 参考资料
 
@@ -481,7 +482,7 @@ ReTool 是这个系列里“工程上最省事、味道上最不同”的一篇�
 ### 本文实现
 
 1. 本章代码：[`train.py`](./train.py)、[`eval.py`](./eval.py)、[`sandbox.py`](./sandbox.py)，运行步骤见[快速启动指南](./start.md)
-2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
+2. [localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)
 3. 原版（PyTRIO）教程与代码：[Datawhale 原教程仓库](https://github.com/datawhalechina/agentic-rl-lab)（`experiments/retool`）
 4. [PyTRIO 文档](https://docs.pytrio.com/docs) / [PyTRIO 是什么？——知乎介绍](https://zhuanlan.zhihu.com/p/2063265307226019219)（原版使用）
 5. [原文的 SwanLab 训练记录](https://swanlab.cn/@kmno4/llm-agent-rl-lab-retool/overview)

@@ -10,14 +10,14 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
+> 本章是 Datawhale [开源原教程](https://github.com/datawhalechina/agentic-rl-lab)《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在你自己的 NVIDIA 显卡上运行：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。不需要登录、API key，也没有计费。本章的特殊之处是 teacher 与 student 不是同一个基模，teacher 要单独占卡：默认的 27B teacher（bf16 约 54GB）在 48GB 卡上要两张卡做张量并行，4 张 48GB 卡时用预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)；卡更少时可以换 9B teacher，80GB 卡上 27B teacher 单卡即可，见[本地运行小节](#在本地运行同步版-demo)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 [Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
 > - 原版开源仓库：[Datawhale 原教程](https://github.com/datawhalechina/agentic-rl-lab)
 > - 同步版代码：[01-demo-sync.py](./01-demo-sync.py)
 > - 异步版代码：[02-demo-async.py](./02-demo-async.py)
-> - 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md) / 本文的[本地运行小节](#在本地运行同步版-demo)
+> - 本地运行：[localtrio 原理与 API 对照](../../docs/content/guide/localtrio.md) / [显存与 GPU 布局规划](../../docs/content/guide/hardware.md) / 本文的[本地运行小节](#在本地运行同步版-demo)
 > - SwanLab 注册入口：[https://swanlab.cn/login](https://swanlab.cn/login)（训练过程与实验指标记录）
 > - DeepMath-103K 数据集：[AI-ModelScope/DeepMath-103K](https://modelscope.cn/datasets/AI-ModelScope/DeepMath-103K)
 > - PyTRIO Skill：[SwanHubX/pytrio-skill](https://github.com/SwanHubX/pytrio-skill)（原作者写 demo 时使用；localtrio 与 PyTRIO 接口同名，生成的代码把 import 换成 `import localtrio as trio` 即可本地运行）
@@ -111,10 +111,10 @@ advantages = -args.kl_penalty_coef * reverse_kl
 
 - prompt 数据：ModelScope 上的 [AI-ModelScope/DeepMath-103K](https://modelscope.cn/datasets/AI-ModelScope/DeepMath-103K)；
 - student：`Qwen/Qwen3.5-4B`，训练一个 rank 32 的 LoRA；
-- teacher：`Qwen/Qwen3.6-27B`，只计算 logprob，不参与优化（bf16 约 54GB，本地需要两张 A6000 张量并行）；
+- teacher：`Qwen/Qwen3.6-27B`，只计算 logprob，不参与优化（bf16 约 54GB，48GB 卡上需要两张卡张量并行，80GB 卡单卡即可）；
 - loss：内置的 `importance_sampling`（与 PyTRIO 同名同语义）；
 - 日志：SwanLab；
-- 执行：localtrio 在本地 GPU 上完成 forward、backward、optimizer step 和权重保存（GPU0），student 采样（GPU1），teacher 打分（GPU2、GPU3 张量并行）。
+- 执行：localtrio 在本地 GPU 上完成 forward、backward、optimizer step 和权重保存（GPU0），student 采样（GPU1），teacher 打分（GPU2、GPU3 张量并行）。这是 4 张 48GB 卡、27B teacher 的布局，卡更少时的写法见[本地运行小节](#在本地运行同步版-demo)。
 
 DeepMath 在这个实验里是 **prompt-only 数据集**。代码只读取 `question` 字段，不使用标准答案，也不计算数学正确率。OPD 的监督信号完全来自 teacher 对 student completion 的 token-level 偏好。
 
@@ -329,7 +329,7 @@ uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，�
 uv run swanlab login      # 可选；不登录时运行命令要加 --swanlab-mode offline / disabled
 ```
 
-模型默认从 HuggingFace 下载，国内网络可以设置 `HF_ENDPOINT`，或 `export LOCALTRIO_MODEL_SOURCE=modelscope` 改用 ModelScope。27B teacher 约 54GB，建议先下载好：
+模型默认从 HuggingFace 下载，国内网络可以设置 `HF_ENDPOINT`，或 `export LOCALTRIO_MODEL_SOURCE=modelscope` 改用 ModelScope。27B teacher 约 54GB，建议先下载好（换 9B teacher 时把 27B 换成 `Qwen/Qwen3.5-9B`）：
 
 ```bash
 uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.6-27B
@@ -337,7 +337,16 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.6-27B
 
 ### 2. 选择 GPU 布局
 
-默认 teacher `Qwen/Qwen3.6-27B` 和 student `Qwen/Qwen3.5-4B` 不是同一个基模，bf16 的 27B 也放不进单张 48GB 卡，所以**必须**使用预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)：
+默认 teacher `Qwen/Qwen3.6-27B` 和 student `Qwen/Qwen3.5-4B` 不是同一个基模，teacher 要在配置里单独分配 GPU，不能直接用不写配置的自动布局。按自己的卡选（最低与推荐配置都是按显存推算的**估算**）：
+
+| 你的卡 | teacher | 配置 |
+| --- | --- | --- |
+| 4 张 ≥48GB（推荐） | 27B（与原文相同） | 预设 [`configs/4gpu-opd-27b.yaml`](../../configs/4gpu-opd-27b.yaml)，见下表 |
+| 2–3 张 80GB（推荐） | 27B，单卡即可 | 自己写 YAML，见第 5 小节的 80GB 写法 |
+| 2–3 张 48GB（最低 2 张） | 换成 `Qwen/Qwen3.5-9B` | 自己写 YAML，见第 5 小节 |
+| 只有 1 张 ≥48GB，或每卡 24GB | 只能换成 student 同基模上的 LoRA teacher（不是原文设置） | 与单基模章节相同，见第 5 小节末尾 |
+
+4 张 48GB 卡时 `configs/4gpu-opd-27b.yaml` 的分工：
 
 | GPU | 用途 |
 | --- | --- |
@@ -349,9 +358,11 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.6-27B
 LOCALTRIO_CONFIG=configs/4gpu-opd-27b.yaml uv run python -m localtrio info   # 确认布局
 ```
 
-忘记设置 `LOCALTRIO_CONFIG` 时，脚本会在加载模型前直接退出并提示这条命令。
+卡多于 4 张时，可以复制这份预设，把 `models.default.gpus` 扩到其余的卡，增加 student 采样副本。忘记设置 `LOCALTRIO_CONFIG` 时，脚本会在加载模型前直接退出并提示该怎么做。
 
 ### 3. 冒烟测试与正式训练
+
+下面的命令以 4 张 48GB 卡的 27B 预设为例。用其他布局时，把 `LOCALTRIO_CONFIG` 换成自己的 YAML；换 9B teacher 时再加上 `--teacher-base-model Qwen/Qwen3.5-9B`（见第 5 小节）。
 
 先运行一个很小的 smoke test，确认模型、数据和权重保存链路都正常：
 
@@ -387,25 +398,27 @@ uv run python experiments/general-opd/01-demo-sync.py \
 
 ### 4. 本地资源估算
 
-> 以下为按模型规模推算的**估算值，未实测**，实际取决于 vLLM 版本、生成长度和是否安装 kernels。
+> 以下为按模型规模推算的**估算值，未实测**，实际取决于显卡型号、vLLM 版本、生成长度和是否安装 kernels。
+
+最低 2 张 48GB 卡（换 9B teacher），推荐 4 张 48GB 或 2–3 张 80GB 卡（27B teacher），各种卡的配法见第 2 小节。下表按 4 张 48GB 卡、27B 预设估算：
 
 | 项目 | 估算 |
 | --- | --- |
 | GPU0（训练） | 约 12–20GB：4B 权重 9–10GB + LoRA/AdamW + 激活（梯度检查点） |
 | GPU1（student 采样） | vLLM 预占约 40GB（`gpu_memory_utilization=0.85`） |
-| GPU2、GPU3（teacher） | 每卡约 27GB 权重 + KV cache，预占约 43GB（`gpu_memory_utilization=0.90`） |
+| GPU2、GPU3（teacher） | 每卡约 27GB 权重 + KV cache，预占约 43GB（`gpu_memory_utilization=0.90`）；80GB 卡单卡放下 54GB 权重 |
 | 磁盘 | 27B 约 54GB + 4B 约 9–10GB + DeepMath 分片 |
 | 启动 | 27B teacher 的 vLLM 引擎加载与初始化约数分钟（不含下载） |
-| 每步耗时 | 同步版默认参数（batch 2 × group 2 × 512 token）约 20–40 秒；batch 4 × group 4 约 40–80 秒；异步版通常明显更快 |
+| 每步耗时 | 同步版默认参数（batch 2 × group 2 × 512 token）约 20–40 秒；batch 4 × group 4 约 40–80 秒；异步版通常明显更快。第 5 小节的其他布局没有单独估算：9B teacher 打分比 27B 快，与训练或其他引擎共卡时会慢一些 |
 
-### 5. 卡不够或想省卡：换小一点的 teacher
+### 5. 卡更少或显存更大：换 teacher 或调整布局
 
-27B 教师必须占两张卡。如果想把卡留给 student 采样，或只有 2–3 张卡，可以换成同系列更小的 teacher，例如 `Qwen/Qwen3.5-9B`（bf16 约 19–20GB，单卡即可）。teacher 变弱后 reverse KL 提供的信号也会变弱，蒸馏效果通常不如 27B，结果不能直接和原文比较；也要确认 teacher 与 student 的 tokenizer 兼容。
+在 48GB 卡上，27B 教师要占两张卡。如果想把卡留给 student 采样，或只有 2–3 张 48GB 卡，可以换成同系列更小的 teacher，例如 `Qwen/Qwen3.5-9B`（bf16 约 19–20GB，单卡即可）。teacher 变弱后 reverse KL 提供的信号也会变弱，蒸馏效果通常不如 27B，结果不能直接和原文比较；也要确认 teacher 与 student 的 tokenizer 兼容。
 
-4 张卡时，把下面的内容保存为自己的配置文件（例如仓库根目录的 `my-opd-9b.yaml`）：
+4 张 48GB 卡时，把下面的内容保存为自己的配置文件（例如仓库根目录的 `my-opd-9b.yaml`）：
 
 ```yaml
-# 4B student + 9B teacher（4 张卡）
+# 4B student + 9B teacher（4 张 48GB 卡）
 trainer:
   gpus: [0]
 models:
@@ -424,12 +437,12 @@ uv run python experiments/general-opd/01-demo-sync.py \
   --steps 10 --batch-size 4 --group-size 4 --max-tokens 512 --sample-size 100
 ```
 
-只有 2–3 张卡时，上面的 YAML 不能照抄：它用到了 GPU3（2 张卡时还有 GPU2），而 localtrio 不会检查配置里的 GPU 编号是否真实存在，对应的 vLLM 子进程会因为找不到 GPU 而启动失败。请按实际卡数改写。下面几种布局只是按显存推算的**估算，未实测**，保存成自己的 YAML 后，把上面命令里的 `LOCALTRIO_CONFIG` 换成该文件即可。
+只有 2–3 张 48GB 卡时，上面的 YAML 不能照抄：它用到了 GPU3（2 张卡时还有 GPU2），而 localtrio 不会检查配置里的 GPU 编号是否真实存在，对应的 vLLM 子进程会因为找不到 GPU 而启动失败。请按实际卡数改写。下面几种布局只是按显存推算的**估算，未实测**，保存成自己的 YAML 后，把上面命令里的 `LOCALTRIO_CONFIG` 换成该文件即可。
 
-3 张卡：student 采样只保留一个副本。
+3 张 48GB 卡：student 采样只保留一个副本。
 
 ```yaml
-# 4B student + 9B teacher（3 张卡，估算、未实测）
+# 4B student + 9B teacher（3 张 48GB 卡，估算、未实测）
 trainer:
   gpus: [0]
 models:
@@ -441,10 +454,10 @@ models:
     max_model_len: 16384
 ```
 
-2 张卡有两种放法。第一种参照 [`configs/1gpu.yaml`](../../configs/1gpu.yaml)，让 student 的 vLLM 和训练共用 GPU0，teacher 独占 GPU1：
+2 张 48GB 卡有两种放法。第一种参照 [`configs/1gpu.yaml`](../../configs/1gpu.yaml)，让 student 的 vLLM 和训练共用 GPU0，teacher 独占 GPU1：
 
 ```yaml
-# 4B student + 9B teacher（2 张卡，student 采样与训练共用 GPU0；估算、未实测）
+# 4B student + 9B teacher（2 张 48GB 卡，student 采样与训练共用 GPU0；估算、未实测）
 trainer:
   gpus: [0]
   max_tokens_per_microbatch: 8192
@@ -461,7 +474,7 @@ models:
 第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`。localtrio 只在同一张卡上各采样引擎的 `gpu_memory_utilization` 之和超过 0.98 时拒绝布局，但不要贴着这个上限配：teacher 做 `compute_logprobs` 时要为 prompt token 计算整词表 logprob。vLLM 0.33 按固定 1024 行分块计算，额外的显存尖峰约 0.5–1GB，启动时按 `gpu_memory_utilization` 做的显存估算只覆盖其中一部分。所以两者合计建议留在 0.85–0.9 左右：
 
 ```yaml
-# 4B student + 9B teacher（2 张卡，训练独占 GPU0，student 与 teacher 的 vLLM 共用 GPU1；估算、未实测）
+# 4B student + 9B teacher（2 张 48GB 卡，训练独占 GPU0，student 与 teacher 的 vLLM 共用 GPU1；估算、未实测）
 trainer:
   gpus: [0]
 models:
@@ -477,13 +490,33 @@ models:
 
 两个引擎挤在一张卡上，各自能用的 KV cache 都会变少。
 
-如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要 `LOCALTRIO_CONFIG`。
+80GB 卡（A100 / H100 等）上，27B teacher 单卡就能放下（bf16 约 54GB），不用换 teacher（估算、未实测）。3 张卡时复制 `configs/4gpu-opd-27b.yaml`，把 teacher 的 `gpus` 改成 `[2]`、`tensor_parallel_size` 改成 `1`；2 张卡时让 student 的 vLLM 和训练共用 GPU0，teacher 独占 GPU1：
+
+```yaml
+# 4B student + 27B teacher（2 张 80GB 卡，student 采样与训练共用 GPU0；估算、未实测）
+trainer:
+  gpus: [0]
+models:
+  default:
+    gpus: [0]
+    gpu_memory_utilization: 0.40
+  Qwen/Qwen3.6-27B:     # teacher 只做 compute_logprobs
+    gpus: [1]
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.90
+    max_model_len: 16384
+    enable_lora: false
+```
+
+默认 teacher 就是 27B，命令里不需要 `--teacher-base-model`。
+
+如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要为 teacher 写配置。这时和其他单基模章节一样：2 张及以上 48GB 卡直接运行；只有 1 张 ≥48GB 卡时用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`；24GB 卡用 `LOCALTRIO_CONFIG=configs/24gb.yaml`，卡多于 2 张时再加 `LOCALTRIO_SAMPLER_GPUS`（如 `1,2,3`）。
 
 ### 6. 常见问题
 
 - **训练 OOM**：在自己的配置里调小 `trainer.max_tokens_per_microbatch`（如 8192）。它只改变 micro-batch 切分，梯度仍按整个 batch 归一化，不改变实验设置。
 - **teacher 的 vLLM 启动时 OOM**：把预设复制成自己的 YAML，调小 teacher 的 `max_model_len`（如 8192，需大于 prompt + `--max-tokens`）或 `gpu_memory_utilization`。
-- **teacher 启动成功，但在运行中做 `compute_logprobs` 时 OOM**：这是计算整词表 prompt logprob 时的显存尖峰。vLLM 0.33 固定按 1024 行分块计算，尖峰约 0.5–1GB，与 `max_num_batched_tokens` 无关，所以调小它没有用。在自己的 YAML 里调低 `models.<teacher 基模名>.gpu_memory_utilization`（teacher 是 student 基模上的专家 LoRA 时改 `models.default`），给尖峰留出余量；teacher 与其他引擎共卡时，这张卡上各引擎的 `gpu_memory_utilization` 都要一起调低。还不够时再调小 teacher 的 `max_model_len`。详见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
+- **teacher 启动成功，但在运行中做 `compute_logprobs` 时 OOM**：这是计算整词表 prompt logprob 时的显存尖峰。vLLM 0.33 固定按 1024 行分块计算，尖峰约 0.5–1GB，与 `max_num_batched_tokens` 无关，所以调小它没有用。在自己的 YAML 里调低 `models.<teacher 基模名>.gpu_memory_utilization`（teacher 是 student 基模上的专家 LoRA 时改 `models.default`），给尖峰留出余量；teacher 与其他引擎共卡时，这张卡上各引擎的 `gpu_memory_utilization` 都要一起调低。还不够时再调小 teacher 的 `max_model_len`。详见 [显存与 GPU 布局规划](../../docs/content/guide/hardware.md)。
 - **vLLM 报 LoRA 不支持某个模块**（如 Qwen3.5 线性注意力的 `in_proj_*` / `out_proj`）：在配置里把 `trainer.lora_target_modules` 改成 `standard`（只用 q/k/v/o + gate/up/down）后重新训练。
 - **报 `trio://` 是 PyTRIO 云端路径**：`--teacher-model-path` 等参数只接受本地目录，请换成 `~/.cache/localtrio/runs/...` 下的目录。
 - **teacher logprobs 长度不一致**：检查 student 和 teacher 的 tokenizer 是否兼容，见下文“保证 tokenizer 兼容”。
@@ -565,7 +598,7 @@ uv run python experiments/general-opd/02-demo-async.py \
   --swanlab-mode online
 ```
 
-异步版会并发处理 batch 内的 prompt，并并发提交同一 prompt 下多条 completion 的 teacher logprob 请求。它没有改变 OPD 算法，只是提高采样和打分阶段的并发利用率：student 的 vLLM（GPU1）和 teacher 的 vLLM（GPU2、GPU3）可以同时工作，而同步版里它们基本是轮流空等。
+异步版会并发处理 batch 内的 prompt，并并发提交同一 prompt 下多条 completion 的 teacher logprob 请求。它没有改变 OPD 算法，只是提高采样和打分阶段的并发利用率：student 的 vLLM 和 teacher 的 vLLM（27B 预设里分别在 GPU1 和 GPU2、GPU3）可以同时工作，而同步版里它们基本是轮流空等。
 
 ## 总结
 

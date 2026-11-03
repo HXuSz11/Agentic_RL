@@ -1,13 +1,13 @@
 ---
 title: 关于本地版
-description: Datawhale 开源 Agentic RL 教程的本地 GPU 改写版：同样的 16 篇算法笔记，代码通过 localtrio 在自己的 4×A6000 上训练与采样。
+description: Datawhale 开源 Agentic RL 教程的本地 GPU 改写版：同样的 16 篇算法笔记，代码通过 localtrio 在你自己的 NVIDIA 显卡上训练与采样，1 张 48GB 或 2 张 24GB 卡起步，卡越多越快。
 ---
 
 # 关于本地版
 
 这是 Datawhale [开源 Agentic RL 教程](https://github.com/datawhalechina/agentic-rl-lab)的**本地 GPU 版本**。原教程用 [PyTRIO](https://pytrio.com) 把模型训练和采样交给云端服务，本地只写数据、奖励和实验循环；这里保留全部算法讲解和实验代码，把“云端那一半”换成了运行在自己显卡上的 [localtrio](./localtrio)。
 
-目标硬件是 **4 张 NVIDIA RTX A6000（48GB）**，也提供单卡和 CPU 调试配置。
+代码在**你自己的 NVIDIA 显卡**上运行（Ampere 或更新的架构，每张卡最好 ≥24GB），不绑定某一款卡，也不要求 4 张卡：默认 GPU 0 训练 LoRA，其余卡各跑一个 vLLM 采样副本；只有 1 张卡时两者共用。2 张 24GB 卡或 1 张 48GB 卡就能跑大部分章节，卡越多采样越快。各章节的估算数字大多以 4 张 48GB 卡为例，其他卡数和显存的情况见[显存与 GPU 布局](./hardware)；没有 GPU 时也可以用 CPU 调试配置检查代码路径。
 
 ## 和原教程有什么不同
 
@@ -16,7 +16,7 @@ description: Datawhale 开源 Agentic RL 教程的本地 GPU 改写版：同样�
 | 训练 / 采样 | PyTRIO 云端（`import pytrio as trio`） | localtrio（`import localtrio as trio`），HF transformers + PEFT 训练，vLLM 采样 |
 | 账号与费用 | 需要 PyTRIO 账号与额度 | 不需要账号，消耗的是自己的 GPU 时间 |
 | checkpoint | `trio://...` 远程路径 | 本地目录 `~/.cache/localtrio/runs/<run>/...`，标准 PEFT 格式 |
-| GPU 规划 | 不需要关心 | 需要：默认 GPU0 训练、GPU1-3 采样，见[显存与 GPU 布局](./hardware) |
+| GPU 规划 | 不需要关心 | 自动按卡数分配：GPU 0 训练、其余卡采样，单卡时共用；见[显存与 GPU 布局](./hardware) |
 | 实验代码 | — | 只替换 import 和少量云端相关代码，算法与超参保持原样 |
 | 实验结果 | 原作者在 PyTRIO 上的记录 | 原文结果图保留并注明来源；本地复现的数值需要以自己的运行为准 |
 
@@ -28,7 +28,7 @@ localtrio 的接口与 PyTRIO 0.2.9 同名同参：`ServiceClient`、`create_lor
 
 1. **论文与直觉**：方法在解决什么问题，核心变量是什么。
 2. **代码与训练**：数据、reward、loss、训练循环怎样连接起来。
-3. **本地运行**：用哪种 GPU 布局、显存大概多少、命令是什么。
+3. **本地运行**：最少几张卡、推荐什么布局、显存大概多少、命令是什么。
 4. **结果与边界**：原文的观察，以及当前实现和原方法之间的差异。
 
 不同章节的分数不能直接放在同一张榜单里比较；算法级实现也有各自的简化，请结合每篇文末的限制阅读。
