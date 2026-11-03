@@ -14,7 +14,7 @@
 
 原教程用 [PyTRIO](https://pytrio.com) 把训练和采样交给云端，本地只写数据、reward 和训练循环。本仓库保留全部算法讲解和实验代码，用 **[localtrio](./localtrio)** 替换云端：
 
-- **接口不变**：`ServiceClient`、`create_lora_training_client`、`forward_backward(_custom)`、`optim_step`、`save_weights_and_get_sampling_client`、`sample`、`compute_logprobs` 与 PyTRIO 0.2.9 同名同参，实验代码只把 `import pytrio as trio` 换成 `import localtrio as trio`。
+- **接口不变**：`ServiceClient`、`create_lora_training_client`、`forward_backward(_custom)`、`optim_step`、`save_weights_and_get_sampling_client`、`sample`、`compute_logprobs` 与 PyTRIO 0.2.9 同名同参，训练循环代码基本只需把 `import pytrio as trio` 换成 `import localtrio as trio`；评测端点、`trio://` 路径和多基模 GPU 布局按[迁移指南](./docs/content/guide/localtrio.md#从-pytrio-代码迁移)调整。
 - **训练**：HF transformers + PEFT LoRA（bf16 基模、fp32 LoRA/AdamW、梯度检查点、分块 logprob），支持 Qwen3.5 的线性注意力层与图文输入。
 - **采样**：vLLM（AsyncLLM 连续批处理，每卡一个副本），每个 step 的 LoRA 权重热加载，logprob 与训练端同口径。
 - **checkpoint**：本地目录、标准 PEFT 格式，可直接 `vllm serve`、合并导出。
@@ -38,6 +38,8 @@ uv run python scripts/gpu_smoke_test.py   # 第一次在 GPU 上运行前的自�
 uv run python experiments/grpo/01-demo-sync.py --steps 2 --batch-size 4 --group-size 4 \
     --max-tokens 512 --swanlab-mode disabled
 ```
+
+`uv sync` 默认精确同步，会卸载这次命令没写上的 extra：之后再装 dev / alfworld 时把 kernels 一起写上（如 `uv sync --extra kernels --extra alfworld`），或者加 `--inexact`，详见[安装说明](./docs/content/guide/quickstart.md#获取代码与安装依赖)。
 
 更多：[安装与第一个实验](./docs/content/guide/quickstart.md) · [localtrio 原理与 API 对照](./docs/content/guide/localtrio.md) · [4×A6000 显存与 GPU 布局](./docs/content/guide/hardware.md)
 
@@ -87,9 +89,9 @@ docs/ scripts/    VitePress 网站（GitHub Pages 自动部署）
 ## 测试与网站
 
 ```bash
-uv sync --extra dev && uv run pytest tests -q      # localtrio 测试，CPU 即可
-npm ci && npm run docs:build && npm run docs:check # 构建并校验网站
-npm run docs:dev                                   # 本地预览 http://127.0.0.1:5173/Agentic_RL/
+uv sync --extra kernels --extra dev && uv run pytest tests -q   # localtrio 测试，CPU 即可；extras 写全，避免卸掉 kernels
+npm ci && npm run docs:build && npm run docs:check              # 构建并校验网站
+npm run docs:dev                                                # 本地预览 http://127.0.0.1:5173/Agentic_RL/
 ```
 
 网站由 [`.github/workflows/docs.yml`](./.github/workflows/docs.yml) 在默认分支推送后部署。首次使用需要在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。

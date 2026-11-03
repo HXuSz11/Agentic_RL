@@ -9,7 +9,7 @@
 ```bash
 uv sync --extra kernels            # Python ≥ 3.12；kernels 是 Qwen3.5 线性注意力的训练加速，强烈建议安装
 uv run python -m localtrio info    # 查看 GPU 布局与 vLLM 版本
-swanlab login                      # 可选；也可以给脚本加 --swanlab-mode offline / disabled
+uv run swanlab login               # 可选；也可以给脚本加 --swanlab-mode offline / disabled
 ```
 
 模型默认从 HuggingFace 下载，数据集（medical-o1、MedQA、C-Eval）也来自 HuggingFace。国内网络可以设置 `HF_ENDPOINT`（HF 镜像）；模型也可以改用 ModelScope：
@@ -60,9 +60,12 @@ Saved weights [epoch003]: ~/.cache/localtrio/runs/<SFT_RUN_ID>/sampler_weights/s
 后面作为 Medical Teacher 的是 **epoch 3 的 `sampler_weights` 目录**。忘记记录时可以直接查找：
 
 ```bash
-ls -d ~/.cache/localtrio/runs/*/sampler_weights/sft-medical-*-epoch003
-SFT_WEIGHTS=$(ls -d ~/.cache/localtrio/runs/*/sampler_weights/sft-medical-*-epoch003 | tail -n 1)
+LT_HOME="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"   # 兼容 LOCALTRIO_HOME
+ls -d "$LT_HOME"/runs/*/sampler_weights/sft-medical-*-epoch003
+SFT_WEIGHTS=$(ls -d "$LT_HOME"/runs/*/sampler_weights/sft-medical-*-epoch003 | tail -n 1)
 ```
+
+如果在 YAML 里改过 `home:`，上面的 `ls` 找不到目录，直接把训练日志里 `Saved weights [epoch003]:` 打印的路径填给 `SFT_WEIGHTS`。
 
 ## 4. 方案一 SAR-OPD
 
@@ -84,8 +87,11 @@ uv run python experiments/medical-opd/03-medical-opd-async.py \
 先试跑可以用 `--steps 10 --batch-size 2 --group-size 2 --sample-size 100 --save-every-steps 5 --swanlab-mode disabled`。同步版 `03-medical-opd-sync.py` 参数相同，更适合逐步调试（用同步版时保存的目录名是 `opd-medical-sync-…`，下面的 glob 两种都能匹配）。结束时打印 step 300 的 `state` 和 `weights` 两个目录：
 
 ```bash
-OPD_STATE=$(ls -d ~/.cache/localtrio/runs/*/states/opd-medical-*-step000300 | tail -n 1)
+LT_HOME="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"
+OPD_STATE=$(ls -d "$LT_HOME"/runs/*/states/opd-medical-*-step000300 | tail -n 1)
 ```
+
+同样，改过 `home:` 时直接用日志里 `Saved checkpoint [step000300] state:` 打印的路径。
 
 **Stage 3：Base-anchor C-Eval OPD**（从 Medical OPD 的 state 继续，Teacher = 原始 Base）：
 
@@ -187,4 +193,8 @@ models:
 - **评测请求超时**：本地单卡生成 8192 token 较慢，默认超时已从原版的 120 秒放宽到 600 秒；仍超时时调大 `--timeout` 或调小 `--concurrency`。
 - **报 `trio://` 是 PyTRIO 云端路径**：本地版只接受 `~/.cache/localtrio/runs/...` 下的本地目录。
 - **训练中断后续训**：state 目录可以用 `create_training_client_from_state_with_optimizer` 恢复 LoRA 和 AdamW 状态；本章脚本的第三阶段按原文设计只恢复权重、不继承优化器。
-- **数值与原文不同**：原文结果来自 PyTRIO 云端（训练、采样与 OpenAI 兼容服务都在服务端）；本地版的 vLLM 数值误差、chat template 处理都可能带来差异，请以本地评测的 Base 为对照。
+- **数值与原文不同**：原文结果来自 PyTRIO 云端（训练、采样与 OpenAI 兼容服务都在服务端）；本地版的 vLLM 数值误差、chat template 处理都可能带来差异，请以本地评测的 Base 为对照。训练端还有两处实现差异：
+  - **输出层 `lm_head`**：`02`、`03`、`05` 脚本创建训练客户端时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文还训练了 `lm_head`；localtrio 默认不训练。设 `trainer.allow_unembed: true` 可开启（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter；各阶段要用同一份配置，第三阶段从训练过 `lm_head` 的 state 恢复时也需要这项设置。
+  - **LoRA 缩放**：`lora_alpha` 默认是 32，不随 rank 变化（可用 `trainer.lora_alpha` 修改），所以缩放系数 `alpha / rank` 随 rank 变化：Medical OPD 与 IDT-OPD 的 fresh Student 默认 rank 16，系数是 2；Medical SFT 默认 rank 32，系数是 1。PyTRIO 服务端的 alpha 未公开，照搬原文的学习率时本地的有效步长可能与原文不同，SFT 与 OPD 阶段的学习率也不能直接按数值比较。
+
+  详见正文“评测 sampler weights”一节末尾的说明和 [localtrio 说明](../../docs/content/guide/localtrio.md#与-pytrio-的已知差异)。

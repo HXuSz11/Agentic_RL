@@ -268,3 +268,30 @@ def test_temp_weights_kept_while_sampler_alive(trio, text_model):
 def test_rank_above_sampler_limit_fails_early(trio, text_model):
     with pytest.raises(trio.ValidationError, match="max_lora_rank"):
         trio.ServiceClient().create_lora_training_client(base_model=text_model, rank=96)
+
+
+def test_dropped_training_client_is_freed_without_gc(trio, text_model):
+    """client 不应处在引用环里：del 之后立刻触发 finalizer，trainer 释放这个 run。"""
+    import gc
+    import time
+    import weakref
+
+    service = trio.ServiceClient()
+    tc = service.create_lora_training_client(base_model=text_model, rank=4, seed=4)
+    tc.get_info()  # 等 create_run 完成
+    run_id = tc.training_run_cuid
+    worker = tc._worker
+    ref = weakref.ref(tc)
+    gc.disable()
+    try:
+        del tc
+        assert ref() is None, "TrainingClient 仍被引用环持有"
+    finally:
+        gc.enable()
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        if run_id not in worker.call("list_runs").result():
+            break  # 已经被 finalizer 经后台线程释放（list_runs 只读，不会替它释放）
+        time.sleep(0.2)
+    else:
+        raise AssertionError("finalizer 没有释放 trainer 里的 run")

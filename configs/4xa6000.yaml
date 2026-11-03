@@ -5,7 +5,7 @@
 #       Search-R1、ReTool、ALFWorld、TEMPO、Spec-o3（4B）、Tournament-GRPO
 # 这也是不提供任何配置文件时的内置默认值。
 home: ~/.cache/localtrio          # 权重与日志目录，可改到大容量磁盘
-model_source: auto                # auto | huggingface | modelscope（国内网络建议 modelscope）
+model_source: auto                # auto | huggingface | modelscope | local（国内网络建议 modelscope；local 只用 model_paths 或本地路径，不下载）
 trainer:
   gpus: [0]
   attn_implementation: sdpa       # 装了 flash-attn 可改为 flash_attention_2

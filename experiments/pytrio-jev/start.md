@@ -9,7 +9,7 @@
 ```bash
 uv sync --extra kernels            # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
 uv run python -m localtrio info    # 查看 GPU 布局、vLLM 版本
-swanlab login                      # 可选；也可以给训练脚本加 --swanlab-mode offline / disabled
+uv run swanlab login               # 可选；也可以给训练脚本加 --swanlab-mode offline / disabled
 ```
 
 模型默认从 HuggingFace 下载。国内网络可以设置 `HF_ENDPOINT`（HF 镜像），或改用 ModelScope：
@@ -73,7 +73,7 @@ trainer / vLLM 子进程的日志在 `~/.cache/localtrio/logs/`。
 
 ## 4. 推理、校准与评测
 
-`--weights` 直接传上一步的本地目录（原版这里是 `trio://` 路径）；不传则评 base 模型。
+`--weights` 直接传上一步的本地目录（原版这里是 `trio://` 路径）。`inference.py` / `eval.py` 不传 `--weights` 时评 base 模型；`calibrate.py` 必须传 `--weights`。
 
 ```bash
 # 内置样例试跑推理

@@ -89,13 +89,17 @@ uv run python experiments/dapo/eval.py
 再评测训练得到的 sampler weights。`--model-path` 直接传本地目录：
 
 ```bash
-RUN_DIR=$(ls -dt "${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"/runs/run_* | head -1)   # 最近一次训练（若在 YAML 里改了 home，换成对应目录）
-ls "$RUN_DIR/sampler_weights"
+# 按 DAPO 的 checkpoint 名找最近一次 DAPO 训练（之后又跑了 GRPO 或别的章节也不会选错），兼容 LOCALTRIO_HOME
+LT_HOME="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"
+CKPT=$(ls -dt "$LT_HOME"/runs/run_*/sampler_weights/dapo-qwen35-4b-10steps-final-sampler-weights | head -1)
+echo "$CKPT"
 
 uv run python experiments/dapo/eval.py \
-    --model-path "$RUN_DIR/sampler_weights/dapo-qwen35-4b-10steps-final-sampler-weights" \
+    --model-path "$CKPT" \
     --output experiments/dapo/eval-results/aime25-dapo-step10.jsonl
 ```
+
+如果用 `--run-name`、`--max-steps` 改了 checkpoint 名，或者在 YAML 里改过 `home:`，上面会找不到目录，这时以训练日志里 `Saved sampler weights:` 打印的路径为准。评测 GRPO baseline 时把名字换成 `grpo-qwen35-4b-10steps-final-sampler-weights`。
 
 评测只启动 vLLM，不加载 trainer。训练已经结束时，可以在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`，让 4 张卡各跑一个副本。每个 JSONL 前 30 行是逐题结果，最后一行是 Average@12、Pass@12、Format 等汇总。
 

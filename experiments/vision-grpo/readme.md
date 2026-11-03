@@ -230,7 +230,7 @@ datum = trio.Datum(
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
-swanlab login             # 可选；--swanlab-mode disabled 时不需要
+uv run swanlab login      # 可选；--swanlab-mode disabled 时不需要
 ```
 
 ### 3.2 下载 GeoQA

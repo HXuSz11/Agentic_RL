@@ -91,7 +91,8 @@ class TrainerConfig:
     # forward_backward_custom 的梯度是否再除以分母；none 表示严格等于用户 loss 的梯度
     custom_loss_normalization: str = "none"
     # LoRA 作用的模块：all-linear = 语言模型里全部投影层（含 Qwen3.5 线性注意力的 in_proj/out_proj，
-    # vLLM ≥0.11 支持）；standard = 只用 q/k/v/o + gate/up/down（旧版 vLLM 报 LoRA 模块不支持时改用它）
+    # 已对照 vLLM 0.33 的 Qwen3.5 LoRA 打包映射）；standard = 只用 q/k/v/o + gate/up/down
+    # （所用 vLLM 加载 adapter 时报 LoRA 模块不支持时改用它）
     lora_target_modules: str | list[str] = "all-linear"
     lora_alpha: float = 32.0
     # 训练端前向保持确定性（custom loss 需要两次前向一致），所有 Dropout 在计算时都关闭，

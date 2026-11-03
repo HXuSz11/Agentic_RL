@@ -94,8 +94,9 @@ uv run python experiments/opsd/00-eval-aime25.py \
 
 ```bash
 LOCALTRIO_ROOT="${LOCALTRIO_HOME:-$HOME/.cache/localtrio}"   # 配置文件里设了 home: 时以它为准
-RUN_DIR=$(ls -dt "$LOCALTRIO_ROOT"/runs/run_* | head -1)   # 最近一次训练
 RUN_NAME=opsd-async-qwen35-4b-sampled-token-steps100   # 同步版为 opsd-sync-qwen35-4b-sampled-token-steps100；用了 --run-name 时改成对应值
+# 按 checkpoint 名字找到本章最近一次训练的 run 目录（不会误选其他章节后来跑的 run）
+RUN_DIR=$(dirname "$(dirname "$(ls -dt "$LOCALTRIO_ROOT"/runs/run_*/sampler_weights/"$RUN_NAME"-step000100 | head -1)")")
 ls "$RUN_DIR/sampler_weights"
 
 for s in 25 50 75 100; do

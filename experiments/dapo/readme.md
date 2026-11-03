@@ -14,7 +14,7 @@
 >
 > 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 同名同参的本地替代库：训练用 transformers + PEFT LoRA，采样用 vLLM）在 4×NVIDIA RTX A6000（48GB）上运行，不需要 `trio login`、API Key，也没有计费。
 >
-> 文中标注“原文在 PyTRIO 上”的数字与经历来自原作者在 PyTRIO 云端的实验；本地的硬件、采样引擎和数值精度都不同，复现结果可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
+> 文中标注“原文在 PyTRIO 上”的数字与经历来自原作者在 PyTRIO 云端的实验；本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见“先把代码跑起来”一节的实现差异说明），复现结果可能有差异。感谢原作者 KMnO4-zx 与 Datawhale 社区的开源工作，原文与原版代码见 [datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)。
 
 > **代码与复现资源**
 >
@@ -234,6 +234,8 @@ uv run python train.py \
     --overlong-cache 1024 \
     --swanlab-mode disabled
 ```
+
+> **与原文的一处实现差异：** `train.py` 调用 `create_lora_training_client` 时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md#与-pytrio-的已知差异)。
 
 代码跑起来以后，再来看这套复现具体是怎么拆的。
 

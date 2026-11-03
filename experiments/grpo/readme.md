@@ -134,7 +134,7 @@ uv run python experiments/grpo/01-demo-sync.py \
 | 首次启动 | 下载模型约 9～10 GB；4 个引擎进程加载 + vLLM 编译 / CUDA graph 捕获，约 2～5 分钟 |
 | 每个 step | `batch-size=4, group-size=8, max-tokens=512`：同步版约 0.5～1.5 分钟；异步版采样阶段各题并发、按 prompt 哈希分到多个副本（batch-size=4 时不一定 3 个副本都用上），会更快 |
 | 10 步试跑 | 连同启动约 10～25 分钟 |
-| 磁盘 | 每份 sampler 权重（rank 32 LoRA，bf16）几十到几百 MB，训练中的临时权重只保留最近 4 份 |
+| 磁盘 | 每份 sampler 权重（rank 32 LoRA，bf16）几十到几百 MB，训练中的临时权重默认保留最近 4 份（仍被 SamplingClient 引用的会多留） |
 
 ## 第一步：准备 prompt 和 reward
 

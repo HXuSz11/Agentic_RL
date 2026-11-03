@@ -131,7 +131,7 @@ Saved sampler weights: /home/<you>/.cache/localtrio/runs/run_YYYYMMDD_HHMMSS_xxx
 | --- | --- |
 | 训练 state（LoRA + AdamW 状态） | `~/.cache/localtrio/runs/<run_id>/states/<name>` |
 | sampler weights（PEFT adapter，供评测） | `~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>` |
-| 每步的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，只保留最近 4 个 |
+| 每步的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，默认保留最近 4 个（仍被引用的会多留） |
 | trainer / vLLM 子进程日志 | `~/.cache/localtrio/logs/` |
 | 评测 JSONL | `--output` 指定的路径，下文示例写到 `experiments/agentopsd/eval_results/` |
 

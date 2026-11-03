@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 import logging
 import queue
@@ -92,6 +93,20 @@ def _drop_run(worker: Any, run_id: str) -> None:
     _DROP_QUEUE.put((worker, run_id))
 
 
+def _report_init(run_id: str, base_model: str, rank: int, fut: Any) -> None:
+    error = fut.exception()
+    if error is None:
+        info = fut.result()
+        print(
+            f"[localtrio] training run {run_id}: base={base_model} rank={rank} "
+            f"trainable={info['trainable_params'] / 1e6:.1f}M targets={','.join(info['target_modules'])}",
+            flush=True,
+        )
+    else:
+        logger.error("训练 run %s 创建失败：%s", run_id, error)
+        print(f"[localtrio] training run {run_id} 创建失败：\n{error}", flush=True)
+
+
 def _invoke_custom_loss(loss_fn: Callable, data: list[Datum], logprobs: list[Any], config: dict[str, object] | None) -> Any:
     if config is None:
         return loss_fn(data, logprobs)
@@ -155,20 +170,9 @@ class TrainingClient:
             init_state=init_state,
             load_optimizer=load_optimizer,
         )
-        self._init.add_done_callback(self._report_init)
-
-    def _report_init(self, fut: Any) -> None:
-        error = fut.exception()
-        if error is None:
-            info = fut.result()
-            print(
-                f"[localtrio] training run {self.training_run_cuid}: base={self.base_model} rank={self.rank} "
-                f"trainable={info['trainable_params'] / 1e6:.1f}M targets={','.join(info['target_modules'])}",
-                flush=True,
-            )
-        else:
-            logger.error("训练 run %s 创建失败：%s", self.training_run_cuid, error)
-            print(f"[localtrio] training run {self.training_run_cuid} 创建失败：\n{error}", flush=True)
+        # 回调不能引用 self：否则 client → _init → 回调 → client 形成引用环，
+        # 丢弃 client 时要等循环 GC 才回收，trainer 里这个 run 的显存也迟迟不释放
+        self._init.add_done_callback(functools.partial(_report_init, self.training_run_cuid, self.base_model, self.rank))
 
     def _call(self, method: str, **kwargs: Any) -> Any:
         if self._init.done() and self._init.exception() is not None:
@@ -392,14 +396,15 @@ class TrainingClient:
             self._worker.call("drop_run", run_id=self.training_run_cuid).result(timeout=60)
         except Exception:  # noqa: BLE001
             pass
-        # 仍被 SamplingClient 引用的临时权重保留（close 之后还可能用它做最终评测）
-        alive = []
+        # 仍被 SamplingClient 引用的临时权重保留（close 之后还可能用它做最终评测），
+        # 在那个 client 被回收时再删除目录（rmtree 不涉及 RPC 锁，放在 finalizer 里安全）
         for path, ref in self._temp_weights:
-            if ref() is None:
+            client = ref()
+            if client is None:
                 shutil.rmtree(path, ignore_errors=True)
             else:
-                alive.append((path, ref))
-        self._temp_weights = alive
+                weakref.finalize(client, shutil.rmtree, str(path), True)
+        self._temp_weights = []
 
     async def close_async(self) -> None:
         await asyncio.to_thread(self.close)

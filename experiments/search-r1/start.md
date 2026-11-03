@@ -155,7 +155,7 @@ uv run python experiments/search-r1/analyse.py --preset deepseek-api \
 | 单个 step | rollout 约 2–4 分钟 + 训练约 1–3 分钟 |
 | 20 step / 100 step | 约 1–2.5 小时 / 约 5–12 小时（未实测） |
 | 70 题评测 | 约 10–20 分钟 |
-| 磁盘 | 每次保存的 LoRA 几十到几百 MB；每步的临时采样权重只保留最近 4 份 |
+| 磁盘 | 每次保存的 LoRA 几十到几百 MB；每步的临时采样权重默认保留最近 4 份（仍被引用的会多留） |
 
 ## 9. 常见问题
 

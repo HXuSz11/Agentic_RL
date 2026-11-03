@@ -122,10 +122,10 @@ Spec-o3 将这种过程称为 iMCoT，即 Interleaved Multimodal Chain-of-Though
 
 ### 快速开始：先把 SFT 跑起来
 
-想先动手的读者，安装好 UV 后，在仓库根目录执行 `uv sync --extra kernels`，再执行下面的命令。不需要 `trio login`，但首次训练前必须先用 `localtrio download` 下载基模权重。SwanLab 默认 online 模式需要先登录；不登录时请给训练命令加 `--swanlab-mode disabled`：
+想先动手的读者，安装好 UV 后，在仓库根目录执行 `uv sync --extra kernels`，再执行下面的命令。不需要 `trio login`；基模权重会在首次训练时自动下载，第一条 `localtrio download` 只是提前下载，可以省略。SwanLab 默认 online 模式需要先登录；不登录时请给训练命令加 `--swanlab-mode disabled`：
 
 ```bash
-uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 可选：提前下载基模权重（不执行时首次训练会自动下载）
 cd experiments/spec-o3
 uv run swanlab login            # 可选；不登录时下面的训练命令加 --swanlab-mode disabled
 
@@ -368,14 +368,14 @@ RL 的 epoch 很长，建议先用 `--epochs 1` 和默认 `--save-every 100` 跑
 ```bash
 uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
 uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
-uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重；9B 实验再加 Qwen/Qwen3.5-9B
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 可选：提前下载基模权重（不执行时首次训练会自动下载）；9B 实验再加 Qwen/Qwen3.5-9B
 cd experiments/spec-o3
 uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-**下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、GPU1/2/3 采样）。脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
+**下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、GPU1/2/3 采样）。部分脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
 
-`localtrio download` 这一步不能省：脚本先读取 tokenizer 与 image processor，HF 缓存里会留下一个没有权重的快照，localtrio 默认的 `auto` 模式会把它当成已缓存的模型，训练端和 vLLM 随后因找不到权重而启动失败；已经失败过时，再执行一次同一条命令即可补全。改从 ModelScope 下载时，除了 `--source modelscope`，后续训练和评测命令前还要加 `LOCALTRIO_MODEL_SOURCE=modelscope`，详见 [快速开始](./start.md)。
+`localtrio download` 只是把基模下载时间提前，不执行时首次训练或评测会自动下载。`prepare_data.py` 和评测 4B 时的 `eval.py`（默认固定 `--model-revision`）从 HF 读取 tokenizer 与 image processor 后，HF 缓存里可能留下一个没有权重的快照；localtrio 会识别并跳过这种快照，照常下载完整权重。训练脚本默认 `--model-revision main`，直接读取 localtrio 实际使用的模型目录。国内网络也可以用 `--source modelscope` 提前下载，`auto` 模式会找到这份缓存；HF 无法访问、又没有提前下载时，可在训练和评测命令前加 `LOCALTRIO_MODEL_SOURCE=modelscope`，让 localtrio 不再先尝试 HF，详见 [快速开始](./start.md)。
 
 ### 8.2 先准备 SFT，再准备 RL 数据
 

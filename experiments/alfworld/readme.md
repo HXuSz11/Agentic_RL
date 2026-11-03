@@ -174,7 +174,7 @@ TextWorld / PDDL 执行动作并更新状态
 uv sync --extra kernels --extra alfworld
 
 # 可选：只在 --swanlab-mode online 时需要
-swanlab login
+uv run swanlab login
 
 uv run --extra alfworld alfworld-download \
     --data-dir "$PWD/experiments/alfworld/datasets/alfworld"

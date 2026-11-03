@@ -125,7 +125,7 @@ Saved weights name: grpo-sync-qwen35-4b-gsm8k-importance-sampling-steps10, path:
 ~/.cache/localtrio/                 # 可用 LOCALTRIO_HOME 改到大容量磁盘
 ├── runs/<run_id>/
 │   ├── sampler_weights/<名字>/      # 最终 LoRA（PEFT adapter，vLLM 可直接加载）
-│   └── tmp_sampler/                # 训练中每步的临时权重，只保留最近 4 份
+│   └── tmp_sampler/                # 训练中每步的临时权重，默认保留最近 4 份
 └── logs/                           # trainer / vLLM 子进程日志
 ```
 
@@ -155,9 +155,12 @@ uv run python -m localtrio serve \
 
 ## 7. 常见问题
 
-**训练端（GPU0）OOM。** 先调小 `--max-tokens`、`--group-size` 或 `--batch-size`；或者在配置文件里把 `trainer.max_tokens_per_microbatch` 从 16384 调到 8192（一个 step 会拆成更多 micro-batch，梯度不变，只是更慢），还可以把 `trainer.logits_chunk_size` 从 1024 调到 512。保持 `trainer.gradient_checkpointing: true`。
+**训练端（GPU0）OOM。** trainer 按 padding 后的 token 预算（`trainer.max_tokens_per_microbatch`）把整个 batch 拆成多个 micro-batch 逐个反向，峰值显存由这个预算约束，和 `--batch-size`、`--group-size` 基本无关。按下面的顺序调：先在配置文件里把 `trainer.max_tokens_per_microbatch` 从 16384 调到 8192 或 4096（一个 step 会拆成更多 micro-batch，梯度不变，只是更慢）；再把 `trainer.logits_chunk_size` 从 1024 调到 512；保持 `trainer.gradient_checkpointing: true`。仍然不够时再缩短 `--max-tokens`，它限制单条序列的长度，主要在单条序列就超过 micro-batch 预算时起作用。调小 `--batch-size` / `--group-size` 几乎省不下训练端显存，还会改变实验设置。
 
-**vLLM 启动时报显存或 KV cache 不足。** 调小 `models.default.gpu_memory_utilization`（如 0.75），或设置 `models.default.max_model_len: 8192`；同一张卡上还有别的进程时尤其需要。
+**vLLM 启动时报显存不足或 KV cache 不足。** 这两种报错的调法相反，先看报错原文：
+
+- 报 `Free memory on device ... is less than desired GPU memory utilization` 或 CUDA OOM（多半是同一张卡上还有别的进程）：调小 `models.default.gpu_memory_utilization`（如 0.75）。
+- 报 `... KV cache is needed, which is larger than the available KV cache memory`：模型自带的 `max_model_len` 放不下，设置 `models.default.max_model_len: 8192`，或在显存允许时调大 `gpu_memory_utilization`。这时再调小 utilization 只会让可用的 KV cache 更少。
 
 **vLLM 报 LoRA 模块不支持**（例如提到 `in_proj_qkv`、`out_proj` 等线性注意力投影）。把 `trainer.lora_target_modules` 改成 `standard`，只在 q/k/v/o + gate/up/down 上加 LoRA。
 

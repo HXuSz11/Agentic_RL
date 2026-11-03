@@ -166,7 +166,7 @@ uv run python -m localtrio info
 uv sync --extra kernels --extra alfworld
 
 # 可选：只在 --swanlab-mode online 时需要
-swanlab login
+uv run swanlab login
 ```
 
 `kernels` 是 Qwen3.5 线性注意力的训练加速 kernel，强烈建议安装；`alfworld` 安装 `alfworld==0.4.2` 与 `spacy==3.8.13`。模型会在第一次运行时自动从 HuggingFace 下载；国内网络可以先执行：
@@ -216,7 +216,9 @@ uv run --extra alfworld python experiments/tempo/train.py \
 | `--endpoint-samples` | 2 | 每个终点估几次取均值（拼 return 用，并非训练 group） |
 | `--save-every` | 10 | TD 阶段每当全局 update 序号（含 warm-up 计数）是它的整数倍时保存 checkpoint；warm-up 阶段不保存，0 关闭中间保存，最终产物始终保存 |
 
-所有默认超参数与原文一致。[`train.py`](./train.py) 里保留了原文的 `MAX_TRAIN_BATCH_SIZE=128`：它在原文里是 PyTRIO 单次 `forward_backward` 的 batch 上限，本地没有这个平台限制，但内置 loss 按每次调用的 active token 数归一化，保留同样的分块才能让梯度尺度与原文一致（显存由 trainer 内部的 micro-batch 控制，不随它线性增长）。`states × (N + K)` 超过 128 时脚本会直接报错，这也是沿用原文的检查。单条序列上限 `MAX_SEQUENCE_TOKENS=12000`（[`rollout.py`](./rollout.py)）同理沿用原文配置。
+脚本的默认超参数与原文一致（LoRA 的作用模块与原文有一处差异，见本节末尾）。[`train.py`](./train.py) 里保留了原文的 `MAX_TRAIN_BATCH_SIZE=128`：它在原文里是 PyTRIO 单次 `forward_backward` 的 batch 上限，本地没有这个平台限制，但内置 loss 按每次调用的 active token 数归一化，保留同样的分块才能让梯度尺度与原文一致（显存由 trainer 内部的 micro-batch 控制，不随它线性增长）。`states × (N + K)` 超过 128 时脚本会直接报错，这也是沿用原文的检查。单条序列上限 `MAX_SEQUENCE_TOKENS=12000`（[`rollout.py`](./rollout.py)）同理沿用原文配置。
+
+> **与原文的一处实现差异：** `train.py` 调用 `create_lora_training_client` 时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md)。另外，localtrio 的 `lora_alpha` 默认 32（`trainer.lora_alpha` 可改），本章 rank 32 时缩放系数为 1；PyTRIO 服务端的取值未公开。
 
 ### 5.4 输出在哪里
 
@@ -225,7 +227,7 @@ uv run --extra alfworld python experiments/tempo/train.py \
 | 训练 state（LoRA + AdamW 状态） | `~/.cache/localtrio/runs/<run_id>/states/tempo-alfworld-qwen35-4b-update-<N>-state` |
 | sampler weights（PEFT adapter） | `~/.cache/localtrio/runs/<run_id>/sampler_weights/tempo-alfworld-qwen35-4b-update-<N>-weights` |
 | 最终产物 | 同上目录下的 `tempo-alfworld-qwen35-4b-final-state` / `-final-weights` |
-| 每个 update 的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，只保留最近 4 个 |
+| 每个 update 的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，默认保留最近 4 个（仍被引用的会多留） |
 | trainer / vLLM 子进程日志 | `~/.cache/localtrio/logs/` |
 | 训练指标 | 终端输出与 SwanLab（`--swanlab-mode`） |
 
@@ -266,7 +268,8 @@ uv run --extra alfworld python experiments/alfworld/eval.py \
 
 - **训练进程（GPU 0）OOM**：确认装了 `--extra kernels`，再写一份配置文件调小 `trainer.max_tokens_per_microbatch`（默认 16384，可改 8192）或 `trainer.logits_chunk_size`（默认 1024，可改 512），用 `LOCALTRIO_CONFIG=<文件>` 运行。单条超过 micro-batch 上限的序列会单独成批，所以一条 12K 序列无论如何都会单独前向。
 - **vLLM OOM**：在配置的 `models.default` 下调小 `gpu_memory_utilization`（如 0.80）或 `max_num_seqs`。
-- **vLLM 报 LoRA 模块不支持**（例如线性注意力的 `in_proj_*` / `out_proj`）：配置里写 `trainer: {lora_target_modules: standard}`，只训练 q/k/v/o + gate/up/down。这会改变 LoRA 的作用范围，结果可能与原文不同。
+- **vLLM 报 LoRA 模块不支持**（例如线性注意力的 `in_proj_*` / `out_proj`）：配置里写 `trainer: {lora_target_modules: standard}`，只训练 q/k/v/o + gate/up/down。这会进一步缩小 LoRA 的作用范围，结果可能与原文不同。
+- **本地结果和原文不一样**：原文结果来自 PyTRIO 云端。本地的 LoRA 实现细节（如 `lora_alpha`、作用模块、默认不训练 `lm_head`，见 5.3 节末尾）、采样引擎数值和随机种子行为都可能不同，加上在线 rollout 本身方差较大，数值有差异是正常的。想让 LoRA 也覆盖 `lm_head`，在配置里加 `trainer: {allow_unembed: true}`，前提是你的 vLLM 能加载带 `lm_head` 的 adapter。
 - **vLLM 启动时报 `max_model_len` 超过 KV cache 容量**：在 `models.default` 下设置 `max_model_len: 16384`。
 - **只有一张 GPU**：使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0，速度会慢很多。
 - **查看 trainer / vLLM 日志**：默认在 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。

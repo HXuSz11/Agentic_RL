@@ -2,7 +2,7 @@
 #   GPU 0    : 学生 LoRA 训练
 #   GPU 1    : 学生 vLLM 采样
 #   GPU 2,3  : 教师 Qwen3.6-27B，tensor_parallel_size=2，只做 compute_logprobs
-# 用法：LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml python experiments/general-opd/01-demo-sync.py
+# 用法：LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py
 trainer:
   gpus: [0]
 models:

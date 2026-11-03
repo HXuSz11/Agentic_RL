@@ -13,7 +13,8 @@ dependencies = [
     "peft>=0.17",
     "accelerate>=1.10",
     "safetensors>=0.5",
-    "vllm>=0.11",
+    # 采样引擎按 vLLM 0.33 的接口编写与核对（Qwen3.5 的 LoRA、FINAL_ONLY 输出等）
+    "vllm>=0.33",
     "huggingface_hub>=0.34",
     # 实验代码依赖（与原仓库一致，去掉 pytrio）
     "datasets>=4.0",

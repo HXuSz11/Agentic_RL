@@ -292,7 +292,7 @@ checkpoint 与恢复
 | 计算 reverse KL 和 advantage | | |
 | SwanLab 记录与实验分析 | | |
 
-对照上面那份清单，localtrio 已经替你处理了三件事：**训练权重与推理权重同步**（每步把 LoRA 写到 `~/.cache/localtrio/runs/<run_id>/` 下，vLLM 按路径热加载，不重启引擎）、**多卡资源调度**（默认 GPU0 训练、GPU1/2/3 采样，也可以换 `configs/` 里的预设）、**checkpoint 与恢复**（`save_state` 写本地目录，可以用 `create_training_client_from_state` 恢复）。你仍然需要自己准备的是 CUDA 驱动和 `uv sync` 装好的 PyTorch / vLLM 环境。
+对照上面那份清单，localtrio 已经替你处理了三件事：**训练权重与推理权重同步**（每步把 LoRA 写到 `~/.cache/localtrio/runs/<run_id>/` 下，vLLM 按路径热加载，不重启引擎）、**多卡资源调度**（默认 GPU0 训练、GPU1/2/3 采样，也可以换 `configs/` 里的预设）、**checkpoint 与恢复**（`save_state` 写本地目录，可以用 `create_training_client_from_state_with_optimizer` 连同 AdamW 状态一起恢复，`create_training_client_from_state` 只恢复 LoRA 权重）。你仍然需要自己准备的是 CUDA 驱动和 `uv sync` 装好的 PyTorch / vLLM 环境。
 
 原文在 PyTRIO 上 100 个 step 的 `time/step_elapsed_time` 累计约 `7,540.6` 秒，也就是约 `2 小时 6 分钟`（不含数据准备和完整 AIME25 评测）。本地的耗时取决于 4 张 A6000 的吞吐，估算见下文“本地资源估算”一节。
 

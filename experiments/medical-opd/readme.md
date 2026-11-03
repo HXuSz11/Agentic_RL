@@ -69,7 +69,7 @@ DeepMath-103K 的版本已经整理成了一份 [通用 OPD 入门教程](../gen
 
 ## 先看最终结果
 
-> 本节和后文的所有准确率与结果图都是**原文在 PyTRIO 上的结果**。本地版的训练、采样与评测服务实现不同（例如 vLLM 的数值误差、chat template 的处理方式），复现数值可能有差异。
+> 本节和后文的所有准确率与结果图都是**原文在 PyTRIO 上的结果**。本地版的训练、采样与评测服务实现不同（例如 vLLM 的数值误差、chat template 的处理方式；训练端默认不训练输出层 `lm_head`，LoRA 的缩放系数也可能与 PyTRIO 不同，见“如何运行这套实验？”中“评测 sampler weights”一节末尾的实现差异说明），复现数值可能有差异。
 
 ### 统一评测口径
 
@@ -752,6 +752,13 @@ uv run python experiments/medical-opd/01-eval-ceval.py \
 ```
 
 评测结果会写入 `experiments/medical-opd/eval-results/`，每次会保存逐题 JSONL 和汇总 metrics JSON。比较 checkpoint 时要保持数据文件、system prompt、temperature 和输出预算一致，否则准确率没有直接可比性。本地 vLLM 的 chat template 处理、数值误差都可能与 PyTRIO 服务端不同，因此本地数值请与本地评测的 Base 对比，而不是直接与原文表格对比。
+
+> **与原文的两处实现差异：**
+>
+> - **输出层 `lm_head`**：`02-medical-sft.py`、`03-medical-opd-*.py` 和 `05-interleaved-multi-teacher-opd.py` 调用 `create_lora_training_client(_async)` 时都没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上训练 Medical Teacher 和 Student 时还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter；各阶段要用同一份配置，第三阶段从训练过 `lm_head` 的 state 恢复时也需要这项设置。
+> - **LoRA 缩放**：localtrio 的 `lora_alpha` 默认是 32，不随 rank 变化（可用 `trainer.lora_alpha` 修改），所以缩放系数 `alpha / rank` 随 rank 变化。Medical OPD 和 IDT-OPD 的 fresh Student 默认 `--lora-rank 16`，系数是 2；Medical SFT 默认 rank 32，系数是 1；第三阶段从 state 恢复，沿用 checkpoint 的 rank 与 alpha。PyTRIO 服务端的 alpha 未公开，所以照搬原文的学习率（`4e-5` / `5e-6` / `1e-5`）时，本地的有效步长可能与原文不同；SFT 与 OPD 阶段的学习率也不能直接按数值比较。
+>
+> 详见 [localtrio 说明的“与 PyTRIO 的已知差异”](../../docs/content/guide/localtrio.md#与-pytrio-的已知差异)。
 
 ### 7. 本地资源估算
 

@@ -704,7 +704,7 @@ DeepSeek 默认使用 `16` 个搜索并发和 `60` 秒超时；Wikipedia 默认�
 这 20 个 step 每步使用 8 道问题，每道问题采样 8 条真实多轮工具轨迹。每 5 step 会保存一次，两份都是本地目录，完整路径会打印在终端：
 
 ```text
-~/.cache/localtrio/runs/<run_id>/states/<run-name>-step-5-state             # 用于断点续训（--resume-state）
+~/.cache/localtrio/runs/<run_id>/states/<run-name>-step-5-state             # 用于从该 LoRA 权重继续训练（--resume-state；只恢复权重，不恢复优化器 / step / 数据位置，见 start.md §5）
 ~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-name>-step-5-weights  # 用于采样与评测（--model-path）
 ```
 

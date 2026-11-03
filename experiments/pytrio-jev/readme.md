@@ -107,7 +107,7 @@
 # 0. 安装依赖（含 Qwen3.5 线性注意力训练加速 kernel）+ 确认 GPU 布局
 uv sync --extra kernels
 uv run python -m localtrio info   # 默认：GPU0 训练，GPU1/2/3 各一个 vLLM 采样副本
-swanlab login    # SwanLab 训练曲线（可选，也可用 --swanlab-mode offline）
+uv run swanlab login   # SwanLab 训练曲线（可选，也可用 --swanlab-mode offline）
 
 # 1. 下载并切分全部数据（训练 2160 条 + 五项评测集）
 uv run python experiments/pytrio-jev/00-prepare-data.py
@@ -171,7 +171,7 @@ uv run python 00-prepare-data.py
 
 训练循环是全异步的：`forward_backward_async()` 和 `optim_step_async()` 提交后不阻塞等结果，日志由独立 task 消费，270 步很快就跑完。在本地版里，这些调用按提交顺序交给 GPU0 上的 trainer 子进程串行执行，语义与原版一致。
 
-> **与原文的一处实现差异**：`create_lora_training_client` 默认 `train_unembed=True`，PyTRIO 会同时训练 lm_head；localtrio 默认忽略这一项（vLLM 的 LoRA 热加载一般不支持 lm_head），只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA。这可能让本地数值和原文略有不同。想与原文保持一致，可在 localtrio 配置（`LOCALTRIO_CONFIG` 指向的 YAML 或本目录的 `localtrio.yaml`）中设置 `trainer: {allow_unembed: true}`，以 LoRA 形式训练 lm_head；需要当前 vLLM 能为该模型加载带 `lm_head` 的 adapter，否则采样端加载会失败（详见 [localtrio 指南](../../docs/content/guide/localtrio.md)）。
+> **与原文的一处实现差异**：`create_lora_training_client` 默认 `train_unembed=True`，PyTRIO 会同时训练 lm_head；localtrio 默认忽略这一项（vLLM 的 LoRA 热加载一般不支持 lm_head），只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA。这可能让本地数值和原文略有不同。想与原文保持一致，可在 localtrio 配置中设置 `trainer: {allow_unembed: true}`，以 LoRA 形式训练 lm_head；需要当前 vLLM 能为该模型加载带 `lm_head` 的 adapter，否则采样端加载会失败（详见 [localtrio 指南](../../docs/content/guide/localtrio.md)）。配置文件是 `LOCALTRIO_CONFIG` 指向的 YAML，或**当前工作目录**下的 `localtrio.yaml`：只有在 `experiments/pytrio-jev/` 内运行时它才是本目录；像第 2 节的四步快速命令那样从仓库根目录运行时，放在本目录的 `localtrio.yaml` 不会被读取，请用 `LOCALTRIO_CONFIG` 指定。
 
 ```bash
 # 在 experiments/pytrio-jev/ 目录内运行（使用默认布局：GPU0 训练）
@@ -201,7 +201,7 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 | 阶段 | GPU0 | GPU1 / GPU2 / GPU3 |
 | --- | --- | --- |
 | `train.py` | LoRA 训练（transformers + PEFT） | 空闲（训练脚本不采样，vLLM 不会启动） |
-| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 各一个 vLLM 副本，请求按在途数负载均衡 |
+| `inference.py` / `calibrate.py` / `eval.py` | 空闲 | 各一个 vLLM 副本；请求按 prompt 前缀哈希分到固定副本（命中 prefix cache），某副本明显更忙（在途请求比最空闲的副本多 8 个以上）时退回最少负载路由 |
 
 评测时 GPU0 空闲，可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把它也加入采样池（评测脚本不会启动 trainer）。
 

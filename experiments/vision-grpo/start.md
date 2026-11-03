@@ -19,7 +19,7 @@
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
-swanlab login             # 可选；调试时用 --swanlab-mode disabled
+uv run swanlab login      # 可选；调试时用 --swanlab-mode disabled
 ```
 
 可以提前下载模型（约 9～10 GB），否则第一次训练时会自动下载：
@@ -189,7 +189,10 @@ uv run python experiments/vision-grpo/analysis.py \
 
 **训练端（GPU0）OOM。** 图文样本和文本样本一样按 token 预算打包（视觉 token 计入长度），先在配置里把 `trainer.max_tokens_per_microbatch` 从 16384 调到 8192，再考虑调小 `--max-tokens`，或把 `trainer.logits_chunk_size` 从 1024 调到 512。保持 `trainer.gradient_checkpointing: true`。
 
-**vLLM 启动时报显存或 KV cache 不足。** 调小 `models.default.gpu_memory_utilization`（如 0.75），或设置 `models.default.max_model_len: 8192`。
+**vLLM 启动时报显存不足或 KV cache 不足。** 这两种报错的调法相反，先看报错原文：
+
+- 报 `Free memory on device ... is less than desired GPU memory utilization` 或 CUDA OOM（多半是同一张卡上还有别的进程）：调小 `models.default.gpu_memory_utilization`（如 0.75）。
+- 报 `... KV cache is needed, which is larger than the available KV cache memory`：模型自带的 `max_model_len` 放不下，设置 `models.default.max_model_len: 8192`，或在显存允许时调大 `gpu_memory_utilization`。这时再调小 utilization 只会让可用的 KV cache 更少。
 
 **vLLM 报 LoRA 模块不支持**（例如提到 `in_proj_qkv`、`out_proj` 等线性注意力投影）。把 `trainer.lora_target_modules` 改成 `standard`，只在 q/k/v/o + gate/up/down 上加 LoRA。
 
@@ -213,7 +216,7 @@ LOCALTRIO_CONFIG=my-vision.yaml uv run python experiments/vision-grpo/train.py -
 
 **报错“图文 prompt 长度不一致：local=…, sampler=…”或“第 0 张图片 expected_tokens=…，image processor 计算为 …”。** 两条报错说的是同一件事：`encode_image()` 估计的视觉 token 数和引擎实际展开的数量不一致。默认的 vLLM 采样后端下通常先看到第一条，它来自 `train.py` 采样后的对齐检查，比较的是 vLLM 展开视觉占位符后的真实 prompt 长度和按 `encode_image()` 算出的本地长度；第二条来自 localtrio 的 `expand_chunks`，在训练端 `forward_backward` 处理 Datum 时触发，用 `hf` 采样后端（如 `configs/cpu-debug.yaml`）时在采样阶段就会触发。排查方法相同：确认没有改动 image processor 的分辨率参数，并且 `train.py` / `eval.py` 与引擎加载的是同一个模型目录（脚本里的 `resolve_model_dir()` 负责这件事）。
 
-**换成多图数据集时 vLLM 报图片数量超限。** 在配置里设置 `models.default.limit_mm_per_prompt: {image: 4}` 这类上限。GeoQA 每题只有一张图，默认即可。
+**换成多图数据集时 vLLM 报图片数量超限。** localtrio 对多模态模型默认 `limit_mm_per_prompt: {image: 8, video: 0}`。一条 prompt 超过 8 张图时，在配置里把 `models.default.limit_mm_per_prompt` 调大，例如 `{image: 16, video: 0}`。这一项会整体替换默认值，记得保留 `video: 0`，否则 vLLM 会把没写的视频上限当成 999，并按这个上限预留编码器显存。GeoQA 每题只有一张图，默认即可。
 
 **`degenerate` 很高、`datums` 很少。** 同一题的回答全对或全错。调大 `--group-size`；回答被截断时也拿不到 `\boxed{}`，可以检查 `rollout/completion_tokens_mean` 是否贴近 `--max-tokens`。
 

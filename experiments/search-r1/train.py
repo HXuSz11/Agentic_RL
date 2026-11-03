@@ -411,7 +411,7 @@ def main(args: argparse.Namespace) -> None:
     if not examples:
         raise ValueError("训练数据为空，请先运行 prepare_data.py")
 
-    # 有 state 就恢复完整训练状态，否则从基础模型新建一个 LoRA 训练客户端。
+    # 有 state 就从它恢复 LoRA 权重（不恢复 AdamW 状态，与原版相同），否则从基础模型新建一个 LoRA 训练客户端。
     service_client = trio.ServiceClient()
     if args.resume_state:
         training_client = service_client.create_training_client_from_state(

@@ -64,7 +64,7 @@ RL 训练里大部分时间花在采样，所以默认把 3 张卡都给 vLLM。
 | Search-R1 / ReTool / Tournament-GRPO | 默认 | 搜索、沙箱、裁判在 CPU / 外部 API；多轮上下文较长 |
 | ALFWorld / TEMPO | 默认 | TextWorld 环境在 CPU 上运行，CPU 核数影响并发 |
 
-想在训练的同时用本地模型当裁判或评测服务：把 `models.default.gpus` 缩成 `[1, 2]`，留 GPU3 给 `python -m localtrio serve --gpus 3`。
+想在训练的同时用本地模型当裁判或评测服务：把 `models.default.gpus` 缩成 `[1, 2]`，留 GPU3 给 `uv run python -m localtrio serve --base-model <裁判/评测模型> --gpus 3`。
 
 ## OOM 排查顺序
 
@@ -74,14 +74,15 @@ RL 训练里大部分时间花在采样，所以默认把 3 张卡都给 vLLM。
    - 确认 `gradient_checkpointing: true`；
    - 9B 以上用双卡训练布局。
 2. **采样卡 OOM / vLLM 启动失败**：
-   - 调小 `models.default.gpu_memory_utilization`（0.85 → 0.75），或设置 `max_model_len`（如 32768）；
+   - 启动时报 `Free memory on device ... is less than desired GPU memory utilization` 或 CUDA OOM（常见于同卡还有别的进程）：调小 `models.default.gpu_memory_utilization`（0.85 → 0.75）；
+   - 启动时报 `... KV cache is needed, which is larger than the available KV cache memory`（模型自带的 `max_model_len` 放不下）：设置 `models.default.max_model_len`（如 32768），或在显存允许时调大 `gpu_memory_utilization`，这时调小它只会让 KV cache 更少；
    - `compute_logprobs` / prompt logprobs 要为每个 prompt token 算整词表 fp32 logprob，显存尖峰与单次预填充长度 `max_num_batched_tokens` 成正比；默认 2048（约 4–5GB），仍然 OOM 时调到 1024，27B 教师预设已设为 1024；只做生成的引擎可以调大到 8192 以加快长 prompt 预填充；
    - 与训练共卡（`1gpu.yaml`）时把 vLLM 压到 0.35–0.40。
 3. **两个基模抢同一组卡**：localtrio 会直接报错并提示在 YAML 里单独分配 GPU。
 
 ## 速度相关
 
-- 安装 Qwen3.5 线性注意力的训练 kernel：`uv sync --extra kernels`（flash-linear-attention + causal-conv1d）。不装也能跑，但训练端会退回纯 PyTorch 实现，长序列明显更慢、更占显存。
+- 安装 Qwen3.5 线性注意力的训练 kernel：`uv sync --extra kernels`（flash-linear-attention + causal-conv1d）；之后要装 dev / alfworld 时把 kernels 一起写上（如 `uv sync --extra kernels --extra alfworld`），否则 `uv sync` 会把 kernels 卸掉。不装也能跑，但训练端会退回纯 PyTorch 实现，长序列明显更慢、更占显存。
 - 想用 FlashAttention-2：安装 `flash-attn` 后把 `trainer.attn_implementation` 改成 `flash_attention_2`。
 - 采样吞吐随采样卡数近似线性增长；训练端是单进程，batch 很大时可以调大 micro-batch 提高利用率。
 - 每个 RL step 都会写一次 LoRA 权重（bf16，几十到几百 MB），把 `home` 放在 SSD 上。

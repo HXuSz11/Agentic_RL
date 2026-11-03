@@ -35,7 +35,7 @@ uv sync --extra kernels --extra alfworld
 - `kernels`：Qwen3.5 线性注意力（Gated DeltaNet）的训练加速 kernel，强烈建议安装；
 - `alfworld`：`alfworld==0.4.2` 与 `spacy==3.8.13`，TextWorld 环境在 CPU 上运行。
 
-Python 版本以仓库根目录的 `pyproject.toml` 为准（`>=3.12`）。`swanlab login` 只在使用 `--swanlab-mode online` 时需要。
+Python 版本以仓库根目录的 `pyproject.toml` 为准（`>=3.12`）。`uv run swanlab login` 只在使用 `--swanlab-mode online` 时需要。
 
 ## 2. 下载模型与 ALFWorld 数据
 
@@ -110,7 +110,7 @@ Saved sampler weights: /home/<you>/.cache/localtrio/runs/run_YYYYMMDD_HHMMSS_xxx
 | --- | --- |
 | 训练 state（LoRA + AdamW 状态） | `~/.cache/localtrio/runs/<run_id>/states/<name>` |
 | sampler weights（PEFT adapter，供评测） | `~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>` |
-| 每个 update 的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，只保留最近 4 个 |
+| 每个 update 的临时采样快照 | `~/.cache/localtrio/runs/<run_id>/tmp_sampler/`，默认保留最近 4 个（仍被引用的会多留） |
 | trainer / vLLM 子进程日志 | `~/.cache/localtrio/logs/` |
 | 评测 JSONL | `--output` 指定的路径，下文示例写到 `experiments/alfworld/eval_results/` |
 

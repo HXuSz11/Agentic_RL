@@ -5,7 +5,7 @@
 >
 > 定位：**算法级复现**，只验证机制成立，不追求刷分。9.x 系列（Harness-RL 就绪前的过渡合集）的第二篇，第 9.2 篇。
 >
-> 本地版：原笔记基于 PyTRIO 云端训练；本仓库通过 localtrio 在 4×A6000 上运行（GPU 0 训练，GPU 1–3 vLLM 采样，actor 与 critic 共用同一组副本），运行命令见 [readme 第 5 节](./readme.md)。下面的方案与参数和原文一致。
+> 本地版：原笔记基于 PyTRIO 云端训练；本仓库通过 localtrio 在 4×A6000 上运行（GPU 0 训练，GPU 1–3 vLLM 采样，actor 与 critic 共用同一组副本），运行命令见 [readme 第 5 节](./readme.md)。下面的方案与脚本参数和原文一致；LoRA 作用模块有一处差异：原文经 PyTRIO 默认的 `train_unembed=True` 还训练了 `lm_head`，localtrio 默认不训练（设 `trainer.allow_unembed: true` 可开启），详见 readme 5.3 节末尾与 5.6 节。
 
 ## 复现方案总览
 

@@ -10,7 +10,7 @@
 
 > **本地 GPU 版说明**
 >
-> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 <https://github.com/datawhalechina/agentic-rl-lab>。
+> 本章是 Datawhale [Agentic RL Lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程《通用 On-policy Distillation（OPD）教程》的本地 GPU 版本。代码通过 [localtrio](../../docs/content/guide/localtrio.md)（与 PyTRIO 0.2.9 同名同参的本地实现：训练用 transformers + PEFT LoRA，采样与打分用 vLLM）在 4×RTX A6000（48GB）上运行，不需要登录、API key，也没有计费。默认的 27B teacher 需要两张卡做张量并行，运行时请使用预设 [`configs/4xa6000-opd-27b.yaml`](../../configs/4xa6000-opd-27b.yaml)。原文的实验在 PyTRIO 云端完成，本地的硬件、采样引擎和数值精度都不同，且默认不训练输出层 `lm_head`（见本地运行小节“常见问题”里的实现差异说明），复现的数值可能有差异。算法讲解与代码来自原作者，感谢原作者与 Datawhale 社区的开源工作，原文见 <https://github.com/datawhalechina/agentic-rl-lab>。
 
 > **代码与复现资源**
 >
@@ -326,7 +326,7 @@ print(f"Saved weights: {save_result.path}")
 
 ```bash
 uv sync --extra kernels   # kernels：Qwen3.5 线性注意力的训练加速，强烈建议安装
-swanlab login             # 可选；不登录时运行命令要加 --swanlab-mode offline / disabled
+uv run swanlab login      # 可选；不登录时运行命令要加 --swanlab-mode offline / disabled
 ```
 
 模型默认从 HuggingFace 下载，国内网络可以设置 `HF_ENDPOINT`，或 `export LOCALTRIO_MODEL_SOURCE=modelscope` 改用 ModelScope。27B teacher 约 54GB，建议先下载好：
@@ -368,7 +368,7 @@ uv run python experiments/general-opd/01-demo-sync.py \
 
 确认能够完整保存权重后，再提高训练量。
 
-> 下面的命令用了 `--swanlab-mode online`，需要先 `swanlab login`（或设置环境变量 `SWANLAB_API_KEY`）；不传 `--swanlab-mode` 时 SwanLab 默认也是 online，要求相同。两者都没有时，交互式终端会停下来让你选择，非交互运行（没有 TTY，比如后台任务）会直接报错。没登录就改用 `--swanlab-mode offline`（记录写到 `experiments/general-opd/swanlog/`）或 `disabled`。下文的异步版命令、第 5 小节不带 `--swanlab-mode` 的 9B 命令同理。
+> 下面的命令用了 `--swanlab-mode online`，需要先 `uv run swanlab login`（或设置环境变量 `SWANLAB_API_KEY`）；不传 `--swanlab-mode` 时 SwanLab 默认也是 online，要求相同。两者都没有时，交互式终端会停下来让你选择，非交互运行（没有 TTY，比如后台任务）会直接报错。没登录就改用 `--swanlab-mode offline`（记录写到 `experiments/general-opd/swanlog/`）或 `disabled`。下文的异步版命令、第 5 小节不带 `--swanlab-mode` 的 9B 命令同理。
 
 ```bash
 LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml \
@@ -458,7 +458,25 @@ models:
     max_model_len: 16384
 ```
 
-第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`，同一张卡上的合计不能超过 0.96（localtrio 会拒绝超出的布局），例如 student `0.35` + teacher `0.60`。两个引擎挤在一张卡上，各自能用的 KV cache 都会变少。
+第二种是训练独占 GPU0，student 和 teacher 两个 vLLM 引擎共用 GPU1。这时要同时调低两者的 `gpu_memory_utilization`。localtrio 只在同一张卡上各采样引擎的 `gpu_memory_utilization` 之和超过 0.98 时拒绝布局，但不要贴着这个上限配：teacher 做 `compute_logprobs` 时要为每个 prompt token 计算整词表 fp32 logprob，这个显存尖峰不在 vLLM 按 `gpu_memory_utilization` 预留的预算里（启动时的显存估算不包含它），默认 `max_num_batched_tokens=2048` 时约 4–5GB。所以两者合计建议留在 0.85–0.9 左右，并把 teacher 的 `max_num_batched_tokens` 调到 1024：
+
+```yaml
+# 4B student + 9B teacher（2 张卡，训练独占 GPU0，student 与 teacher 的 vLLM 共用 GPU1；估算、未实测）
+trainer:
+  gpus: [0]
+models:
+  default:                       # student 采样：GPU1
+    gpus: [1]
+    gpu_memory_utilization: 0.35
+  Qwen/Qwen3.5-9B:               # teacher 只做 compute_logprobs：也在 GPU1
+    gpus: [1]
+    gpu_memory_utilization: 0.52
+    enable_lora: false
+    max_model_len: 16384
+    max_num_batched_tokens: 1024 # 压低 compute_logprobs 的显存尖峰
+```
+
+两个引擎挤在一张卡上，各自能用的 KV cache 都会变少。
 
 如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要 `LOCALTRIO_CONFIG`。
 
@@ -466,9 +484,11 @@ models:
 
 - **训练 OOM**：在自己的配置里调小 `trainer.max_tokens_per_microbatch`（如 8192）。它只改变 micro-batch 切分，梯度仍按整个 batch 归一化，不改变实验设置。
 - **teacher 的 vLLM 启动时 OOM**：把预设复制成自己的 YAML，调小 teacher 的 `max_model_len`（如 8192，需大于 prompt + `--max-tokens`）或 `gpu_memory_utilization`。
+- **teacher 启动成功，但在运行中做 `compute_logprobs` 时 OOM**：这是预填充时整词表 fp32 logprob 的显存尖峰，与单次预填充长度 `max_num_batched_tokens` 成正比（默认 2048，约 4–5GB）。在自己的 YAML 里把 `models.<teacher 基模名>.max_num_batched_tokens` 调到 1024（27B 预设已经是 1024；teacher 是 student 基模上的专家 LoRA 时改 `models.default`）；teacher 与其他引擎共卡时，再调低这张卡上各引擎的 `gpu_memory_utilization`，给尖峰留出余量。详见 [4×A6000 硬件指南](../../docs/content/guide/hardware.md)。
 - **vLLM 报 LoRA 不支持某个模块**（如 Qwen3.5 线性注意力的 `in_proj_*` / `out_proj`）：在配置里把 `trainer.lora_target_modules` 改成 `standard`（只用 q/k/v/o + gate/up/down）后重新训练。
 - **报 `trio://` 是 PyTRIO 云端路径**：`--teacher-model-path` 等参数只接受本地目录，请换成 `~/.cache/localtrio/runs/...` 下的目录。
 - **teacher logprobs 长度不一致**：检查 student 和 teacher 的 tokenizer 是否兼容，见下文“保证 tokenizer 兼容”。
+- **与原文的一处实现差异（输出层 `lm_head`）**：`01-demo-sync.py` 和 `02-demo-async.py` 调用 `create_lora_training_client(_async)` 时没有传 `train_unembed`，PyTRIO 默认 `train_unembed=True`，原文在 PyTRIO 上还训练了输出层 `lm_head`。localtrio 默认忽略这一项，只在语言模型的全部线性层（`trainer.lora_target_modules: all-linear`）上加 LoRA，本地结果可能因此与原文不同。想尽量对齐，可在 localtrio 配置里设 `trainer.allow_unembed: true`（以 LoRA 形式训练 `lm_head`），前提是你的 vLLM 能为这个模型加载带 `lm_head` 的 adapter，详见 [localtrio 说明](../../docs/content/guide/localtrio.md#与-pytrio-的已知差异)。
 
 ## 如何阅读训练指标
 

@@ -1,6 +1,6 @@
 # Spec-o3 快速开始
 
-按顺序完成：安装环境并下载基模 → 确认 GPU 布局 → 下载数据 → SFT 冷启动 → GRPO → 评测。
+按顺序完成：安装环境（可选：预下载基模）→ 确认 GPU 布局 → 下载数据 → SFT 冷启动 → GRPO → 评测。
 
 本页是本地 4×RTX A6000（48GB）版：SFT、GRPO 与采样通过 [localtrio](../../docs/content/guide/localtrio.md) 跑在自己的 GPU 上（图文输入走 `ImageChunk`），光谱绘图工具在本机 CPU 上运行。原理与原文结果见 [readme.md](./readme.md)，原文公开的训练曲线见 [SwanLab](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)。
 
@@ -11,7 +11,7 @@
 ```bash
 uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
 uv run python -m localtrio info  # 查看 GPU、vLLM 版本与当前布局
-uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 必须：首次训练前下载基模权重；训练 9B 时再加 Qwen/Qwen3.5-9B
+uv run python -m localtrio download Qwen/Qwen3.5-4B --source huggingface   # 可选：提前下载基模权重；不执行时首次训练会自动下载；训练 9B 时再加 Qwen/Qwen3.5-9B
 cd experiments/spec-o3
 uv run swanlab login             # 可选；训练命令改用 --swanlab-mode disabled 时可跳过
 ```
@@ -19,8 +19,8 @@ uv run swanlab login             # 可选；训练命令改用 --swanlab-mode di
 **后续命令都在 `experiments/spec-o3/` 中执行。**
 
 - 不需要 `trio login`、`PYTRIO_API_KEY`，也没有训练计费。
-- **首次训练或评测前，必须先用上面的 `localtrio download` 下载基模权重**（9B 实验执行 `uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.5-9B --source huggingface`）。原因是 `train_sft.py`、`train_rl.py`、`eval.py` 会先用 `transformers` 从 Hugging Face 读取 tokenizer 与 image processor（可按 `--model-revision` 固定版本），HF 缓存里因此会留下一个只含这些文件、没有权重的快照；localtrio 默认的 `auto` 模式会把它当成已缓存的模型，训练端和 vLLM 找不到权重而启动失败。如果之前已经这样失败过，执行同一条 `download` 命令即可补全。
-- 国内网络请设置 `export HF_ENDPOINT=https://hf-mirror.com`，tokenizer 读取和上面的 `download` 都会走镜像。也可以改从 ModelScope 下载：`download` 时用 `--source modelscope`，并且后续训练和评测命令前都要加 `LOCALTRIO_MODEL_SOURCE=modelscope`（或在 YAML 里写 `model_source: modelscope`）；只改下载来源不够，`auto` 模式会先查 HF 缓存，仍会命中上面那个不完整的快照。
+- 基模权重会在首次训练或评测时由 localtrio 自动下载，上面的 `localtrio download` 只是把下载时间提前（9B 实验执行 `uv run python -m localtrio download Qwen/Qwen3.5-4B Qwen/Qwen3.5-9B --source huggingface`）。`prepare_data.py` 和评测 4B 时的 `eval.py`（默认使用固定的 `--model-revision`）会用 `transformers` 从 Hugging Face 读取 tokenizer 与 image processor，HF 缓存里因此可能留下一个只含这些文件、没有权重的快照；localtrio 会跳过这种快照，首次使用时照常下载完整权重。`train_sft.py`、`train_rl.py` 默认 `--model-revision main`，直接从 localtrio 实际使用的模型目录读取 tokenizer 与 image processor（必要时先下载）。
+- 国内网络请设置 `export HF_ENDPOINT=https://hf-mirror.com`，tokenizer 读取和上面的 `download` 都会走镜像。也可以改从 ModelScope 下载：`download` 时用 `--source modelscope` 即可，`auto` 模式会找到这份缓存，后续命令无需额外设置。HF 无法访问、又没有提前下载时，可在训练和评测命令前加 `LOCALTRIO_MODEL_SOURCE=modelscope`（或在 YAML 里写 `model_source: modelscope`），让 localtrio 不再先尝试 HF。
 - `prepare_data.py` 会在脚本内把 `HF_ENDPOINT` 固定为 `https://huggingface.co`（原版设置），下载数据时需要能访问 Hugging Face 官方站点。
 
 ## 2. GPU 布局

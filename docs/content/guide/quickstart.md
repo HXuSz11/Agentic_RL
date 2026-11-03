@@ -23,7 +23,11 @@ uv sync                      # torch、transformers、peft、vllm 与实验依�
 uv sync --extra kernels      # 推荐：Qwen3.5 线性注意力的训练 kernel（flash-linear-attention、causal-conv1d）
 ```
 
-`causal-conv1d` 没有匹配的预编译 wheel 时会从源码编译，需要本机有 CUDA 工具链；编译失败可以先跳过这一步，训练会退回较慢的纯 PyTorch 实现。ALFWorld / TEMPO / AgentOPSD 还需要 `uv sync --extra alfworld`。
+`causal-conv1d` 没有匹配的预编译 wheel 时会从源码编译，需要本机有 CUDA 工具链；编译失败可以先跳过这一步，训练会退回较慢的纯 PyTorch 实现。ALFWorld / TEMPO / AgentOPSD 还需要 alfworld 依赖：`uv sync --extra kernels --extra alfworld`（kernels 编译失败时用 `uv sync --extra alfworld`）。
+
+::: warning uv sync 会移除没写上的 extra
+`uv sync` 默认精确同步：这次命令没有指定的 extra 会被卸载。比如装过 kernels 之后再单独执行 `uv sync --extra dev` 或 `uv sync --extra alfworld`，flash-linear-attention / causal-conv1d 会被删掉，训练悄悄退回纯 PyTorch 实现。所以每次都把要用的 extras 写全（如 `uv sync --extra kernels --extra dev`），或者加 `--inexact` 只装不删。`uv run` 不会移除已经装好的包。
+:::
 
 ## 检查环境与 GPU 布局
 
@@ -97,7 +101,7 @@ vLLM 第一次启动要编译 CUDA graph，可能需要几分钟；之后同一�
 可以检查代码路径，但只适合微型模型：
 
 ```bash
-uv sync --extra dev
+uv sync --extra kernels --extra dev   # 机器上编译不了 kernels 时改成 uv sync --extra dev
 uv run pytest tests -q
 ```
 

@@ -279,6 +279,10 @@ class TrainerEngine:
         n_params = sum(p.numel() for p in run.params)
         return {"run_id": run_id, "trainable_params": n_params, "target_modules": targets}
 
+    def list_runs(self) -> list[str]:
+        """当前托管的训练 run（调试 / 测试用，只读）。"""
+        return sorted(self.runs)
+
     def drop_run(self, run_id: str) -> bool:
         run = self.runs.pop(run_id, None)
         if run is None:

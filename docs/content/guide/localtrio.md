@@ -5,11 +5,13 @@ description: localtrio 用 HF transformers + PEFT 训练 LoRA、用 vLLM 采样�
 
 # localtrio：本地版 Train API
 
-原教程的每个实验都只和一组很小的接口打交道：创建 LoRA 训练会话、用当前权重采样、把带 advantage 的样本交给 `forward_backward`、`optim_step`、保存权重。PyTRIO（以及 Tinker）把这组接口放在云端；**localtrio 在本地把同一组接口实现了一遍**，所以实验代码只需要改一行：
+原教程的每个实验都只和一组很小的接口打交道：创建 LoRA 训练会话、用当前权重采样、把带 advantage 的样本交给 `forward_backward`、`optim_step`、保存权重。PyTRIO（以及 Tinker）把这组接口放在云端；**localtrio 在本地把同一组接口实现了一遍**，所以训练循环代码基本只需要改一行 import：
 
 ```python
 import localtrio as trio   # 原来是 import pytrio as trio
 ```
+
+评测端点、`trio://` 路径和多基模 GPU 布局还需要按[从 PyTRIO 代码迁移](#从-pytrio-代码迁移)调整。
 
 ## 架构
 
@@ -24,7 +26,8 @@ import localtrio as trio   # 原来是 import pytrio as trio
 │
 └── sampler 子进程 ×N   CUDA_VISIBLE_DEVICES=1 / 2 / 3（每卡一个副本）
       vLLM AsyncLLM，连续批处理；token-in / token-out
-      LoRA 热加载：每个 sampler_weights 目录 = 一个 LoRARequest
+      LoRA 热加载：每个权重版本（目录路径 + adapter_model.safetensors 修改时间）
+      对应一个 LoRARequest；同名目录被覆盖保存后会重新加载
 ```
 
 - 主进程与子进程通过 Unix socket 通信；调用按提交顺序发送，trainer 串行执行，所以 `forward_backward` → `optim_step` 的先后关系与 PyTRIO 一样由提交顺序决定。
@@ -43,7 +46,7 @@ optim_step ──► save_weights_and_get_sampling_client()
                sample() ──► vLLM 用 LoRARequest(path) 热加载，不重启引擎
 ```
 
-临时目录只保留最近 4 个。同一基模的所有 LoRA（不同 step、教师 SFT 权重）以及不带 LoRA 的基模共用同一组 vLLM 副本，所以 OPSD 的 step-0 教师、Medical OPD 的 SFT 教师都不需要额外显卡。
+临时目录默认只保留最近 4 份；更早但仍被某个 `SamplingClient` 引用的目录会先保留，等该 client 被回收后，在下一次 `save_weights_and_get_sampling_client` 或 `TrainingClient.close()` 时清理（详见[出错时的行为](#出错时的行为)）。同一基模的所有 LoRA（不同 step、教师 SFT 权重）以及不带 LoRA 的基模共用同一组 vLLM 副本，所以 OPSD 的 step-0 教师、Medical OPD 的 SFT 教师都不需要额外显卡。
 
 ## API 对照
 
@@ -61,7 +64,7 @@ optim_step ──► save_weights_and_get_sampling_client()
 | `save_weights_and_get_sampling_client()` | 同名（含 `_async`） | 见上节 |
 | `sampling_client.sample(prompt, num_samples, sampling_params, include_prompt_logprobs, topk_prompt_logprobs, return_text)` | 同名（含 `_async`） | vLLM `TokensPrompt` + `SamplingParams(n=num_samples, logprobs=0)` |
 | `compute_logprobs(prompt)` | 同名（含 `_async`） | vLLM `prompt_logprobs`，首位为 `None` |
-| `trio.Datum / ModelInput / ImageChunk / TensorData / SamplingParams / AdamParams` | 同名同字段 | pydantic 类型，行为一致 |
+| `trio.Datum / ModelInput / ImageChunk / SamplingParams / AdamParams`，以及 `trio.types.TensorData`（顶层没有 `trio.TensorData`，与 PyTRIO 相同） | 同名同字段 | pydantic 类型，行为一致 |
 | `APIFuture`：`.result()` / `await` | 同名 | 同步方法返回 future；`*_async` 在 `await` 后同样得到 future（`sample_async`、`compute_logprobs_async` 直接返回结果），与 PyTRIO 一致 |
 | `trio.configure(timeout=..., ...)` | 同名 | 网络与超时参数被忽略；可传 localtrio 自己的配置项 |
 
@@ -78,8 +81,8 @@ optim_step ──► save_weights_and_get_sampling_client()
 | `dro` | `-(lp · A - 0.5 · β · (lp - old)²)` | `beta`（默认 0.05） |
 
 - `target_tokens == -100` 的位置不参与计算；prompt 位置一般用 target 0、advantage 0 占位（贡献为 0）。
-- **归一化**：一次 `forward_backward` 调用就是一个 logical batch，内置 loss 的梯度按整批的 active token 数归一化（active token = `target != -100` 的位置，与 PyTRIO SDK 统计 `total_active_tokens` 的口径一致，prompt / observation 位置若用 target 0 占位也会计入）；micro-batch 拆分不改变梯度。全局可在配置里改成 `samples`（除以样本数）或 `sum`（Tinker 风格，不归一化），也可以按调用覆盖：`forward_backward(data, "ppo", {"clip_low_threshold": 0.8, "clip_high_threshold": 1.28, "normalization": "sum"})`。原教程各章对 PyTRIO 服务端口径的假设不完全相同，相关章节的快速启动里写了建议值；Adam 对整体常数缩放不敏感，口径差异主要影响不同 step 之间的相对权重。
-- 返回的 `metrics` 与 PyTRIO 同名：`loss_sum`、`token_count`、`loss_mean = loss_sum / token_count`；custom loss 返回的指标会合并进去。
+- **归一化**：一次 `forward_backward` 调用就是一个 logical batch，内置 loss 的梯度按整批的 token 数归一化，分母口径与 PyTRIO SDK 统计 `total_active_tokens` / `total_advantage_tokens` 一致：策略 loss（`importance_sampling` / `ppo` / `cispo`）的 active token = `target != -100` 的位置，prompt / observation 位置若用 target 0 占位也算；`cross_entropy` 只算 `target != -100` 且 `weights != 0` 的位置，所以 SFT 里 weight 为 0 的 prompt 不算；`dro` 除以 advantage 非 0 的 active token 数（`total_advantage_tokens`）；`auto_shift=True` 时每条样本的第一个 label 不算。micro-batch 拆分不改变梯度。全局可在配置里改成 `samples`（除以样本数）或 `sum`（Tinker 风格，不归一化），也可以按调用覆盖：`forward_backward(data, "ppo", {"clip_low_threshold": 0.8, "clip_high_threshold": 1.28, "normalization": "sum"})`。原教程各章对 PyTRIO 服务端口径的假设不完全相同，相关章节的快速启动里写了建议值；Adam 对整体常数缩放不敏感，口径差异主要影响不同 step 之间的相对权重。
+- 返回的 `metrics` 与 PyTRIO 同名：`loss_sum`、`token_count`、`loss_mean = loss_sum / token_count`；内置 loss 的 `token_count` 一律是上面的 `total_active_tokens`（`dro` 也是，不是它的归一化分母）；custom loss 返回的指标会合并进去。
 - 采样端返回的 logprob 是**原始模型分布**（vLLM `logprobs_mode=raw_logprobs`），与训练端 `forward` 口径一致，on-policy 时 ratio ≈ 1。
 
 ## 出错时的行为
@@ -105,21 +108,23 @@ optim_step ──► save_weights_and_get_sampling_client()
 
 ## LoRA 作用范围
 
-默认 `trainer.lora_target_modules: all-linear`：语言模型里的全部投影层——全注意力层的 `q/k/v/o_proj`、Qwen3.5 线性注意力（Gated DeltaNet）层的 `in_proj_qkv / in_proj_z / in_proj_a / in_proj_b / out_proj`，以及 MLP 的 `gate/up/down_proj`。vLLM ≥0.11 对 Qwen3.5 的这些模块都支持 LoRA。如果你的 vLLM 版本加载 adapter 时报 “expected target modules ...”，把它改成 `standard`（只用 q/k/v/o + MLP）。
+默认 `trainer.lora_target_modules: all-linear`：语言模型里的全部投影层——全注意力层的 `q/k/v/o_proj`、Qwen3.5 线性注意力（Gated DeltaNet）层的 `in_proj_qkv / in_proj_z / in_proj_a / in_proj_b / out_proj`，以及 MLP 的 `gate/up/down_proj`。这一点按 vLLM 0.33 编写与核对（其 `qwen3_5.py` 为 Gated DeltaNet 的投影声明了 packed LoRA 映射）；更早的 vLLM 可能没有 Qwen3.5 模型类，或不支持这些模块的 LoRA。如果你的 vLLM 版本加载 adapter 时报 “expected target modules ...”，把它改成 `standard`（只用 q/k/v/o + MLP）。
 
 ## 配置
 
-不提供配置时使用内置默认布局（GPU0 训练，其余卡做采样）。需要改布局时写一个 YAML，并通过环境变量指定：
+不提供配置时使用内置默认布局（GPU0 训练，其余卡做采样）。需要改布局时写一个 YAML，用环境变量 `LOCALTRIO_CONFIG` 指定，或者命名为 `localtrio.yaml` 放在运行脚本时的当前工作目录（会被自动读取）：
 
 ```bash
 LOCALTRIO_CONFIG=configs/4xa6000-opd-27b.yaml uv run python experiments/general-opd/01-demo-sync.py
 ```
 
+读取规则：设置了 `LOCALTRIO_CONFIG` 就读它指向的文件，否则读当前工作目录的 `localtrio.yaml`，两者只读一个、不合并；YAML 叠加在内置默认值之上，`trio.configure(...)` 传入的配置项再覆盖 YAML，下面列出的其余 `LOCALTRIO_*` 环境变量最后覆盖。
+
 常用配置项：
 
 ```yaml
 home: ~/.cache/localtrio          # checkpoint 与日志目录
-model_source: auto                # auto | huggingface | modelscope
+model_source: auto                # auto | huggingface | modelscope | local（local：只用 model_paths 或本地路径，不下载）
 model_paths:                      # 可选：模型名 → 本地目录
   Qwen/Qwen3.5-4B: /data/models/Qwen3.5-4B
 trainer:
@@ -130,7 +135,7 @@ trainer:
   loss_normalization: active_tokens
 models:
   default:                        # 训练基模的采样引擎
-    gpus: [1, 2, 3]
+    gpus: [1]                     # 与下面的教师错开；不写时自动取 trainer 和教师之外的卡
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_model_len: null           # null = 模型自带上限
@@ -179,8 +184,8 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
 ## 测试
 
 ```bash
-uv sync --extra dev
-uv run pytest tests -q        # CPU 即可运行：构造随机初始化的微型 Qwen3 / Qwen3.5-VL 模型
+uv sync --extra kernels --extra dev   # 一次带齐要用的 extras：只写 --extra dev 会把已装的 kernels 卸掉
+uv run pytest tests -q                # CPU 即可运行：构造随机初始化的微型 Qwen3 / Qwen3.5-VL 模型
 ```
 
-测试覆盖：分块 logprob 与完整 logits 一致、四种策略 loss 的数值、custom loss 梯度与直接求导一致、micro-batch 不变性、AdamW 更新与 checkpoint 往返、导出 adapter 可被 PEFT 加载、Qwen3.5 线性注意力 + 图片输入的前向/反向，以及通过 `ServiceClient` 走子进程的端到端流程（采样与训练 logprob 一致、训练后目标序列概率上升、异步接口、top-k prompt logprobs）。vLLM 后端需要 GPU，不在 CPU 测试范围内。
+测试覆盖：分块 logprob 与完整 logits 一致、四种策略 loss 的数值、custom loss 梯度与直接求导一致、micro-batch 不变性、AdamW 更新与 checkpoint 往返、导出 adapter 可被 PEFT 加载、Qwen3.5 线性注意力 + 图片输入的前向/反向、采样副本的路由亲和性与默认 GPU 布局，以及通过 `ServiceClient` 走子进程的端到端流程（采样与训练 logprob 一致、训练后目标序列概率上升、异步接口、top-k prompt logprobs）。vLLM 后端的参数构造与结果解析（LoRARequest 路径与 `lora_int_id` 换代、`stop` → `stop_token_ids`、`n>1`、prompt / top-k logprobs、图文 prompt）用 `tests/fake_vllm` 模拟 vLLM 0.33 的接口测试；真实 vLLM 的数值与性能需要在 GPU 上验证。
