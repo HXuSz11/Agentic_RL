@@ -30,8 +30,8 @@ uv run swanlab login             # 可选；训练命令改用 --swanlab-mode di
 | 基模 | 你的卡 | 命令前加 | 分工 |
 | --- | --- | --- | --- |
 | Qwen3.5-4B | 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`，或不加 | 训练与采样共用 GPU0（vLLM 占 40%），约慢 3～4 倍 |
-| Qwen3.5-4B | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
-| Qwen3.5-4B | 4 张（推荐） | 不加（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同） | GPU0 训练，GPU1–3 采样 |
+| Qwen3.5-4B | 2 张 ≥24GB（最低） | 48GB 卡不加；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
+| Qwen3.5-4B | 4 张（推荐） | 不加（与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同）；24GB 卡同样加 `../../configs/24gb.yaml` | GPU0 训练，GPU1–3 采样 |
 | Qwen3.5-9B | 2 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/2gpu.yaml` | GPU0 训练（micro-batch 8192），GPU1 采样 |
 | Qwen3.5-9B | 4 张 ≥48GB（推荐） | `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml`（[预设](../../configs/4gpu-big-student.yaml)） | GPU0–1 训练（按层切分），GPU2–3 采样 |
 
@@ -229,7 +229,7 @@ uv run python analysis.py
 改 localtrio 参数时，复制一份预设再用 `LOCALTRIO_CONFIG` 指定（路径相对于当前目录）：
 
 ```bash
-cp ../../configs/4gpu.yaml my-spec-o3.yaml   # 按第 2 节选：1gpu / 2gpu / 4gpu / 4gpu-big-student（9B）
+cp ../../configs/4gpu.yaml my-spec-o3.yaml   # 按第 2 节选：1gpu / 24gb / 4gpu（4B），2gpu / 4gpu-big-student（9B）
 LOCALTRIO_CONFIG=my-spec-o3.yaml uv run python train_rl.py ...
 ```
 

@@ -35,6 +35,8 @@ uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基
 - 只有 1 张 ≥48GB 卡：在命令前加 `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`（训练与采样共用 GPU0，vLLM 只占 40% 显存，评测更慢）。
 - 评测时想把 GPU0 也用上：在命令前加 `LOCALTRIO_SAMPLER_GPUS`，按实际卡数写，例如 2 张卡时 `0,1`、4 张卡时 `0,1,2,3`。
 
+以上路径按第 2 节起的运行目录 `experiments/pytrio-jev/` 写；从仓库根目录运行时写 `configs/...`。
+
 ## 2. 准备数据
 
 以下命令都在 `experiments/pytrio-jev/` 目录内运行：
@@ -110,7 +112,7 @@ uv run python analysis.py
 
 ## 6. 常见问题
 
-**怎么改 localtrio 配置？** 写一份自己的 YAML（例如按卡数复制 `configs/2gpu.yaml` 或 `configs/4gpu.yaml` 再修改），用 `LOCALTRIO_CONFIG` 指向它；也可以把它命名为 `localtrio.yaml` 放在**当前工作目录**（本章是 `experiments/pytrio-jev/`），会被自动读取。例如：
+**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/24gb.yaml`，或按卡数复制 `configs/2gpu.yaml` / `configs/4gpu.yaml` 再修改），用 `LOCALTRIO_CONFIG` 指向它；也可以把它命名为 `localtrio.yaml` 放在**当前工作目录**（本章是 `experiments/pytrio-jev/`），会被自动读取。例如：
 
 ```yaml
 trainer:
@@ -125,7 +127,7 @@ models:
 ```
 
 ```bash
-LOCALTRIO_CONFIG=../../my-jev.yaml uv run python train.py ...
+LOCALTRIO_CONFIG=../../my-jev.yaml uv run python train.py ...   # my-jev.yaml 放在仓库根目录时
 ```
 
 - **训练 OOM**：调小 `trainer.max_tokens_per_microbatch`（如 8192 或 4096）。它只改变 micro-batch 切分，梯度仍按整个 batch 的 active token 数归一化，不改变实验设置；不建议改 `--batch-size`。

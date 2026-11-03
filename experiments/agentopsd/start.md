@@ -29,10 +29,10 @@ uv run python -m localtrio info
 | 你的卡 | 怎么跑 |
 | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0，vLLM 只占 40% 显存）；训练卡显存偏紧，OOM 见第 10 节 |
-| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡用第 10 节的保守配置（micro-batch 8192、`logits_chunk_size` 512、`max_model_len` 16384），训练卡显存偏紧 |
-| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样用第 10 节的保守配置 |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192），训练卡显存偏紧 |
+| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样用 `configs/24gb.yaml` |
 
-卡少时超参数不用改，只是更慢，耗时见第 9 节。临时换卡可以用 `LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量覆盖布局。
+24GB 的采样卡还要设置 `max_model_len: 16384`（复制一份 `configs/24gb.yaml`，取消 `max_model_len` 的注释）；训练卡仍 OOM 时换第 10 节的保守配置（再加 `logits_chunk_size` 512，已含 `max_model_len` 16384）。卡少时超参数不用改，只是更慢，耗时见第 9 节。临时换卡可以用 `LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量覆盖布局。
 
 ## 1. 安装依赖
 
@@ -257,7 +257,7 @@ uv run python experiments/agentopsd/analysis.py \
 
 ## 10. 常见问题
 
-**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）。下面的文件没有写 `gpus`，仍按卡数自动分配（GPU 0 训练、其余卡采样）；24GB 卡也可以直接用这份：
+**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）。下面的文件没有写 `gpus`，仍按卡数自动分配（GPU 0 训练、其余卡采样）；24GB 卡用 `configs/24gb.yaml` 仍 OOM 时也换成这份：
 
 ```yaml
 # ~/localtrio-agentopsd.yaml：在默认布局上做保守的显存设置

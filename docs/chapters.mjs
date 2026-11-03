@@ -22,7 +22,7 @@ export const chapters = [
   { id: 'retool', number: '12', title: 'ReTool', subtitle: '把 Python 变成推理工具', group: 'agents', source: 'experiments/retool/readme.md', start: 'experiments/retool/start.md', description: '连接本地代码沙箱，复现思考与代码执行交织进行的 Agentic RL，工具 token 只做上下文不参与 loss。', tags: ['代码沙箱', '工具调用'] },
   { id: 'alfworld', number: '13', title: 'ALFWorld', subtitle: '训练一个会做家务的 Agent', group: 'agents', source: 'experiments/alfworld/readme.md', start: 'experiments/alfworld/start.md', description: '在本地 TextWorld 环境里处理 12K 长轨迹、环境反馈与家务任务，环境跑 CPU、模型跑 GPU。', tags: ['具身环境', '长轨迹'] },
   { id: 'tempo', number: '14', title: 'TEMPO', subtitle: '用小段轨迹学习长程任务', group: 'frontiers', source: 'experiments/tempo/readme.md', description: '在 ALFWorld 中探索 macro-step 优化与生成式 critic，记录算法级复现的边界。', tags: ['Macro-step', '生成式 Critic'] },
-  { id: 'spec-o3', number: '15', title: 'Spec-o3', subtitle: '用强化学习寻找天上的星星', group: 'frontiers', source: 'experiments/spec-o3/readme.md', start: 'experiments/spec-o3/start.md', description: '从 SFT 到 GRPO，让模型边看光谱、边思考、边调用工具完成天体候选审核；9B 学生用双卡训练布局。', tags: ['光谱分析', '多模态工具'] },
+  { id: 'spec-o3', number: '15', title: 'Spec-o3', subtitle: '用强化学习寻找天上的星星', group: 'frontiers', source: 'experiments/spec-o3/readme.md', start: 'experiments/spec-o3/start.md', description: '从 SFT 到 GRPO，让模型边看光谱、边思考、边调用工具完成天体候选审核；9B 学生需要每卡 ≥48GB。', tags: ['光谱分析', '多模态工具'] },
   { id: 'tournament-grpo', number: '16', title: 'Tournament-GRPO', subtitle: '让研究报告打一场淘汰赛', group: 'agents', source: 'experiments/tournament-grpo/readme.md', start: 'experiments/tournament-grpo/start.md', description: '让同题研究报告两两比赛，用淘汰赛胜场构造 GRPO 奖励；策略在本地训练，裁判仍走外部 API。', tags: ['淘汰赛奖励', 'Deep Research'] },
 ]
 

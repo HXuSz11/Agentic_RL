@@ -216,7 +216,7 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 
 **显存（估算，每卡 48GB 时）**：
 
-- GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足；24GB 卡把 `trainer.max_tokens_per_microbatch` 调到 8192（约 13–18GB，`configs/2gpu.yaml` 已经这样设置）。
+- GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足；24GB 卡把 `trainer.max_tokens_per_microbatch` 调到 8192（约 13–18GB，`configs/24gb.yaml` 已经这样设置）。
 - 采样卡：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。24GB 卡上预占约 20GB，KV cache 只剩约 10GB，vLLM 启动报 KV cache 不足时设置 `models.default.max_model_len`（如 16384）。
 
 **耗时（估算）**：

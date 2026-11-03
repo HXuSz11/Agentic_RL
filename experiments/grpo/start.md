@@ -25,7 +25,7 @@ uv run python -m localtrio info
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
 | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
-| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行。24GB 卡另把 micro-batch 调到 8192（写法见第 7 节） | 基准 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行。24GB 卡同样加 `LOCALTRIO_CONFIG=configs/24gb.yaml` | 基准 |
 
 ## 1. 安装依赖
 
@@ -135,7 +135,7 @@ Saved weights name: grpo-sync-qwen35-4b-gsm8k-importance-sampling-steps10, path:
 └── logs/                           # trainer / vLLM 子进程日志
 ```
 
-想手动看看训练后的模型怎么答题，可以在训练结束后（GPU 空出来后）把这个目录挂到本地 OpenAI 兼容服务上：
+想手动看看训练后的模型怎么答题，可以在训练结束后（GPU 空出来后）把这个目录挂到本地 OpenAI 兼容服务上（只有 1 张卡时把 `--gpus 1` 改成 `--gpus 0`）：
 
 ```bash
 uv run python -m localtrio serve \

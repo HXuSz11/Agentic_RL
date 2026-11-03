@@ -184,9 +184,9 @@ Format 没有到 100% 的主要原因不是模型学不会，而是预算：AIME
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。默认布局按卡数自动分配，沙箱在 CPU |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（48GB 卡直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。默认布局按卡数自动分配，沙箱在 CPU |
 | GPU 0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加 LoRA/AdamW 与梯度检查点激活，单条 ≤ 8,192 token 时约 15–25 GB；24GB 卡用 micro-batch 8192，约 13–18 GB |
-| 采样卡显存 | 每卡 vLLM 预占 85%（`gpu_memory_utilization=0.85`）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡报 KV cache 不足时设置 `max_model_len: 10240` |
+| 采样卡显存 | 每卡 vLLM 预占 85%（`gpu_memory_utilization=0.85`）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡上要设置 `max_model_len: 10240`（见 [start.md](./start.md) 第 2 节） |
 | CPU | 沙箱默认 8 个并发子进程（`--sandbox-workers`），每段代码最长 30 秒 |
 | 单个 step | rollout 最多 6 轮串行生成 + 代码执行，约 2–4 分钟；训练约 1–1.5 分钟 |
 | 20 step / 200 step | 约 1–1.8 小时 / 约 10–18 小时 |

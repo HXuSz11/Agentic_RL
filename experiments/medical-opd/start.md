@@ -180,7 +180,7 @@ uv run python experiments/medical-opd/01-eval-ceval.py   --model "$WEIGHTS" --ma
 
 ## 8. 常见问题
 
-**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制和你卡数对应的 `configs/2gpu.yaml` 或 `configs/4gpu.yaml`，修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
+**怎么改 localtrio 配置？** 写一份自己的 YAML（例如复制 `configs/24gb.yaml`，或和你卡数对应的 `configs/2gpu.yaml` / `configs/4gpu.yaml`，修改后存为 `my-medical.yaml`），在命令前加 `LOCALTRIO_CONFIG=my-medical.yaml`；也可以命名为 `localtrio.yaml` 放在当前工作目录（仓库根目录）自动读取。常用项：
 
 ```yaml
 trainer:

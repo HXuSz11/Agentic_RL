@@ -31,10 +31,10 @@ uv run swanlab login             # 可选；不记录到云端时给训练命令
 | 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
-| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
-| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行 | 基准 |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行；24GB 卡同样用 `configs/24gb.yaml` | 基准 |
 
-- 多轮轨迹最长 8,192 token。用 24GB 采样卡或单卡共用时，如果 vLLM 报 KV cache 不足，就设置 `models.default.max_model_len: 10240`，写法见第 7 节。
+- 多轮轨迹最长 8,192 token。24GB 采样卡上 KV cache 只有约 10GB，要设置 `models.default.max_model_len: 10240`（复制一份 `configs/24gb.yaml`，取消 `max_model_len` 的注释并改成 10240，写法见第 7 节）；单卡共用时 vLLM 报 KV cache 不足也这样设置。
 - 想临时换卡：`LOCALTRIO_TRAINER_GPUS=0 LOCALTRIO_SAMPLER_GPUS=1,2` 这类环境变量会覆盖布局，用 `uv run python -m localtrio info` 确认。
 
 ## 3. 准备数据
@@ -168,10 +168,10 @@ uv run python experiments/retool/analysis.py --output experiments/retool/eval-re
 
 ## 7. 常见问题
 
-改 localtrio 参数时，复制一份与你卡数对应的预设（`configs/1gpu.yaml` / `2gpu.yaml` / `4gpu.yaml`），再用 `LOCALTRIO_CONFIG` 指定；也可以只写改动的几项，没写 `models.default.gpus` 时仍按卡数自动分配：
+改 localtrio 参数时，复制一份与你的卡对应的预设（单张 48GB 卡用 `configs/1gpu.yaml`，24GB 卡用 `configs/24gb.yaml`，其余用 `configs/4gpu.yaml` 等），再用 `LOCALTRIO_CONFIG` 指定；也可以只写改动的几项，没写 `models.default.gpus` 时仍按卡数自动分配：
 
 ```bash
-cp configs/2gpu.yaml my-retool.yaml   # 换成你卡数对应的预设，按下面的说明修改
+cp configs/24gb.yaml my-retool.yaml   # 换成与你的卡对应的预设，按下面的说明修改
 LOCALTRIO_CONFIG=my-retool.yaml uv run python experiments/retool/train.py ...
 ```
 

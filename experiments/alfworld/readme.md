@@ -403,7 +403,7 @@ prefilling 远高于 train 和 sample。原因就藏在 Agent 循环里：每执
 | 你的卡 | 怎么跑 | 速度（相对 4 卡，估算） |
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=configs/1gpu.yaml` | 约慢 3～4 倍 |
-| 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml` | 约慢 2～3 倍 |
+| 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml` | 约慢 2～3 倍 |
 | 4 张（推荐） | 不写配置：GPU 0 训练，GPU 1–3 各一个 vLLM 副本 | 基准 |
 
 24GB 的采样卡还要设置 `max_model_len: 16384`。下表按 4 张 48GB 卡估算：

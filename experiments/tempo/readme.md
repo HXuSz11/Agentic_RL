@@ -159,10 +159,10 @@ TEMPO 只有一份参数：actor 和生成式 critic 是同一个基模 `Qwen/Qw
 | 你的卡 | 怎么跑（速度相对 4 卡，估算） |
 | --- | --- |
 | 1 张 ≥48GB | `LOCALTRIO_CONFIG=configs/1gpu.yaml`（自动布局也会这样分），约慢 3～4 倍 |
-| 2 张 ≥24GB | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
-| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同 |
+| 2 张 ≥24GB | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
+| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样用 `configs/24gb.yaml` |
 
-24GB 的采样卡还要设置 `max_model_len: 16384`，见 5.6 节。查看本机实际生效的布局：
+24GB 的采样卡还要设置 `max_model_len: 16384`（复制一份 `configs/24gb.yaml`，取消 `max_model_len` 的注释），见 5.6 节。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info
@@ -283,17 +283,15 @@ uv run --extra alfworld python experiments/alfworld/eval.py \
 - **只有一张 GPU**：需要 ≥48GB 的卡，使用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0（vLLM 占 40% 显存），速度约为 4 卡的 1/3～1/4。24GB / 32GB 单卡放不下本章的正式配置。
 - **查看 trainer / vLLM 日志**：默认在 `~/.cache/localtrio/logs/`；设置 `LOCALTRIO_WORKER_LOGS=inherit` 可以直接打印到终端。
 
-一份保守的显存配置示例（文件可以放在任意位置，24GB 卡也可以从这份开始）：
+一份保守的显存配置示例（文件可以放在任意位置；没有写 `gpus`，仍按卡数自动分配；24GB 卡用 `configs/24gb.yaml` 仍 OOM 时也换成这份）：
 
 ```yaml
 # ~/localtrio-tempo.yaml
 trainer:
-  gpus: [0]
   max_tokens_per_microbatch: 8192
   logits_chunk_size: 512
 models:
   default:
-    gpus: [1, 2, 3]          # 按自己的卡数改，例如 2 张卡写 [1]
     gpu_memory_utilization: 0.80
     max_model_len: 16384
 ```

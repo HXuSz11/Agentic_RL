@@ -334,8 +334,8 @@ SFT 让模型学习“**思考 → 工具调用 → 图片观察 → 继续思�
 | 基模 | 你的卡 | 预设（在 `experiments/spec-o3/` 目录运行时） | 分工 |
 | --- | --- | --- | --- |
 | Qwen3.5-4B | 1 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/1gpu.yaml`，或不写配置 | 训练与采样共用 GPU0（vLLM 占 40%），约慢 3～4 倍 |
-| Qwen3.5-4B | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
-| Qwen3.5-4B | 4 张（推荐） | 不写配置（与 `configs/4gpu.yaml` 相同） | GPU0 训练，GPU1–3 采样 |
+| Qwen3.5-4B | 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=../../configs/24gb.yaml` | GPU0 训练（24GB 卡 micro-batch 8192），其余卡采样，约慢 2～3 倍 |
+| Qwen3.5-4B | 4 张（推荐） | 不写配置（与 `configs/4gpu.yaml` 相同）；24GB 卡同样加 `../../configs/24gb.yaml` | GPU0 训练，GPU1–3 采样 |
 | Qwen3.5-9B | 2 张 ≥48GB（最低） | `LOCALTRIO_CONFIG=../../configs/2gpu.yaml` | GPU0 训练（micro-batch 8192），GPU1 采样 |
 | Qwen3.5-9B | 4 张 ≥48GB（推荐） | `LOCALTRIO_CONFIG=../../configs/4gpu-big-student.yaml` | GPU0–1 训练（按层切分），GPU2–3 采样 |
 

@@ -23,10 +23,10 @@
 | 你的卡 | 怎么跑（速度相对 4 卡，估算） |
 | --- | --- |
 | 1 张 ≥48GB | `LOCALTRIO_CONFIG=configs/1gpu.yaml`（自动布局也会这样分），约慢 3～4 倍 |
-| 2 张 ≥24GB | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
-| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同 |
+| 2 张 ≥24GB | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（micro-batch 8192）。约慢 2～3 倍 |
+| 4 张（推荐） | 不写配置，GPU 0 训练、GPU 1–3 采样，与预设 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样用 `configs/24gb.yaml` |
 
-24GB 的采样卡还要设置 `max_model_len: 16384`，见第 9 节。查看本机实际生效的布局：
+24GB 的采样卡还要设置 `max_model_len: 16384`（复制一份 `configs/24gb.yaml`，取消 `max_model_len` 的注释），见第 9 节。查看本机实际生效的布局：
 
 ```bash
 uv run python -m localtrio info
@@ -218,17 +218,15 @@ uv run python experiments/alfworld/analysis.py \
 
 ## 9. 常见问题
 
-**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）：
+**训练进程（GPU 0）OOM。** 先确认装了 `--extra kernels`。再写一份配置文件调小显存相关参数（文件可以放在任意位置）。下面的文件没有写 `gpus`，仍按卡数自动分配（GPU 0 训练、其余卡采样）；24GB 卡用 `configs/24gb.yaml` 仍 OOM 时也换成这份：
 
 ```yaml
-# ~/localtrio-alfworld.yaml：保守的显存设置，24GB 卡也可以从这份开始
+# ~/localtrio-alfworld.yaml：在默认布局上做保守的显存设置
 trainer:
-  gpus: [0]
   max_tokens_per_microbatch: 8192   # 默认 16384；24GB 卡仍 OOM 时降到 4096；单条超过上限的轨迹会单独成批
   logits_chunk_size: 512            # 默认 1024；降低 lm_head 分块大小
 models:
   default:
-    gpus: [1, 2, 3]                 # 按自己的卡数改，例如 2 张卡写 [1]
     gpu_memory_utilization: 0.80    # 默认 0.85
     max_model_len: 16384            # 12K 轨迹 + 余量
 ```

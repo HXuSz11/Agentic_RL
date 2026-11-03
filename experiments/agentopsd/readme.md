@@ -357,7 +357,7 @@ uv run python experiments/agentopsd/analysis.py \
 | 项目 | 估算 |
 | --- | --- |
 | GPU 布局 | 默认布局，无需配置：GPU 0 训练，其余每张卡一个 vLLM 副本，Student 与 Self-Teacher 共用 |
-| 最低配置 | 1 张 ≥48GB（`LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0），或 2 张 ≥24GB（24GB 卡用 [start.md](./start.md) 常见问题里的保守配置）。这两种情况训练卡显存都偏紧，OOM 时的调法也见那里 |
+| 最低配置 | 1 张 ≥48GB（`LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU 0），或 2 张 ≥24GB（24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`，采样卡还要设置 `max_model_len: 16384`，仍 OOM 时换 [start.md](./start.md) 常见问题里的保守配置）。这两种情况训练卡显存都偏紧，OOM 时的调法也见那里 |
 | 推荐配置 | 4 张卡；3 张、8 张也直接运行 |
 | GPU 0 显存 | 权重约 8～10GB，加上 LoRA、AdamW 与 14K token 单条轨迹的激活，峰值约 20～35GB |
 | 采样卡显存 | 每卡按 `gpu_memory_utilization=0.85` 预占 85%（48GB 卡约 40GB），权重之外用作 KV cache；Teacher 整轨迹 `compute_logprobs` 会有额外显存尖峰 |

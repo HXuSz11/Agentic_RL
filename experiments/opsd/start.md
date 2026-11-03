@@ -33,7 +33,7 @@ uv run swanlab login               # 可选；不用 SwanLab 就在训练命令�
 | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`，训练与采样共用 GPU0（vLLM 只占 40% 显存） |
 | 2 张 ≥24GB（最低） | 48GB 卡直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） |
-| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡用常见问题里的配置文件把 micro-batch 调到 8192 |
+| 3 张、4 张（推荐 4 张）或更多 | 直接运行，4 张卡时与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；24GB 卡同样加 `LOCALTRIO_CONFIG=configs/24gb.yaml` |
 
 卡少时实验设置不用改，只是更慢，各项耗时见第 5 节。24GB 卡上 vLLM 启动报 KV cache 不足时，再按常见问题设置 `max_model_len`。其他情况：
 

@@ -9,7 +9,7 @@
 
 训练（LoRA）跑在 trainer 子进程，采样跑在 vLLM 子进程，默认 GPU0 训练、其余每张卡一个采样副本（只有 1 张卡时共用 GPU0）；
 batch 内的并发请求会被分发到各个 vLLM 副本。其他布局用 LOCALTRIO_CONFIG=configs/xxx.yaml 指定
-（如 configs/1gpu.yaml、configs/2gpu.yaml）。
+（如 1 张卡用 configs/1gpu.yaml，24GB 卡用 configs/24gb.yaml）。
 
 小规模试跑（仓库根目录）：
 uv run python experiments/grpo/02-demo-async.py \

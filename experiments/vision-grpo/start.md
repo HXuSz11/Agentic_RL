@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | 1 张 ≥48GB（最低） | 命令前加 `LOCALTRIO_CONFIG=configs/1gpu.yaml`（训练与采样共用 GPU 0） | 约 1/3～1/4 |
 | 2 张 ≥24GB（最低） | 直接运行；24GB 卡加 `LOCALTRIO_CONFIG=configs/24gb.yaml`（训练 micro-batch 8192） | 约 1/2～1/3 |
-| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行。24GB 卡另把 micro-batch 调到 8192（见第 11 节） | 基准 |
+| 4 张（推荐） | 直接运行，与 [`configs/4gpu.yaml`](../../configs/4gpu.yaml) 相同；3 张、8 张卡也直接运行。24GB 卡同样加 `LOCALTRIO_CONFIG=configs/24gb.yaml` | 基准 |
 
 图片 token 计入序列长度，显存估算和 OOM 处理见第 10、11 节。
 

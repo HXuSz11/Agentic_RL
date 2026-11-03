@@ -243,9 +243,9 @@ training_client.optim_step(adam_params).result()
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（48GB 卡直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
 | GPU 0 训练显存 | Qwen3.5-4B bf16 权重约 9 GB，加上 LoRA 与 AdamW 状态、梯度检查点激活和分块 logits，单条轨迹 ≤ 8,192 token 时约 15–25 GB；24GB 卡用 micro-batch 8192，约 13–18 GB |
-| 采样卡显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占（权重 + KV cache）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡报 KV cache 不足时设置 `max_model_len: 10240` |
+| 采样卡显存 | 每卡 vLLM 按 `gpu_memory_utilization=0.85` 预占（权重 + KV cache）：48GB 卡约 40 GB，24GB 卡约 20 GB；24GB 卡上要设置 `max_model_len: 10240`（见 [start.md](./start.md) 第 2 节） |
 | 单个 step | 64 条轨迹：rollout 受搜索延迟和最多 6 轮串行生成影响，约 2–4 分钟；训练约 1–3 分钟 |
 | 20 / 100 step | 约 1–2.5 小时 / 约 5–12 小时（Wikipedia 后端并发只有 3，会更慢） |
 | 评测 70 题 | 约 10–20 分钟，主要受搜索延迟影响 |

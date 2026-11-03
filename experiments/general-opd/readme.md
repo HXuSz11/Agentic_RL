@@ -314,7 +314,7 @@ save_result = training_client.save_weights_for_sampler(
 print(f"Saved weights: {save_result.path}")
 ```
 
-本地版返回的是一个本地目录，例如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/opd-deepmath-qwen35-4b-sync`。它可以继续传给 sampling client 的 `model_path` 用于推理，也可以在训练结束、GPU 已释放后，用 `uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --lora opd=<该目录> --gpus 1 --port 8000` 挂到本地 OpenAI 兼容服务里做评测（用法见 [Medical OPD 快速启动](../medical-opd/start.md)）。
+本地版返回的是一个本地目录，例如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/opd-deepmath-qwen35-4b-sync`。它可以继续传给 sampling client 的 `model_path` 用于推理，也可以在训练结束、GPU 已释放后，用 `uv run python -m localtrio serve --base-model Qwen/Qwen3.5-4B --lora opd=<该目录> --gpus 1 --port 8000` 挂到本地 OpenAI 兼容服务里做评测（只有 1 张卡时改成 `--gpus 0`；用法见 [Medical OPD 快速启动](../medical-opd/start.md)）。
 
 ## 在本地运行同步版 demo
 
@@ -510,7 +510,7 @@ models:
 
 默认 teacher 就是 27B，命令里不需要 `--teacher-base-model`。
 
-如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要为 teacher 写配置。这时和其他单基模章节一样：2 张及以上 48GB 卡直接运行；只有 1 张 ≥48GB 卡时用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`；24GB 卡用 `LOCALTRIO_CONFIG=configs/24gb.yaml`，卡多于 2 张时再加 `LOCALTRIO_SAMPLER_GPUS`（如 `1,2,3`）。
+如果 teacher 是 student 基模上训练出的专家 LoRA（`--teacher-base-model Qwen/Qwen3.5-4B --teacher-model-path <sampler_weights 目录>`），teacher 和 student 共用同一组 vLLM，直接用默认布局即可，不需要为 teacher 写配置。这时和其他单基模章节一样：2 张及以上 48GB 卡直接运行；只有 1 张 ≥48GB 卡时用 `LOCALTRIO_CONFIG=configs/1gpu.yaml`；24GB 卡用 `LOCALTRIO_CONFIG=configs/24gb.yaml`（GPU 仍按卡数自动分配，卡多于 2 张时不用再指定采样卡）。
 
 ### 6. 常见问题
 

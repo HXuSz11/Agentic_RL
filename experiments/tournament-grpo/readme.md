@@ -333,9 +333,9 @@ SwanLab：[Base 生成](https://swanlab.cn/@MRLE/tournament-grpo/runs/5cqbugvp)�
 
 | 项目 | 估算（未实测） |
 | --- | --- |
-| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
+| 最低 / 推荐配置 | 最低 1 张 ≥48GB（`configs/1gpu.yaml`）或 2 张 ≥24GB（48GB 卡直接运行，24GB 卡用 `configs/24gb.yaml`）；推荐 4 张。其他情况直接运行，布局按卡数自动分配 |
 | GPU 0 训练显存 | 4B bf16 权重约 9 GB + LoRA/AdamW + 激活；单条轨迹最长约 2.2 万 token（4,096 prompt + 18,000 response），超过 `max_tokens_per_microbatch` 时单独成一个 micro-batch，峰值约 15–25 GB（与[显存与 GPU 布局规划](../../docs/content/guide/hardware.md)口径一致）；24GB 卡用 micro-batch 8192，仍 OOM 时降到 4096 |
-| 采样卡显存 | 每卡 vLLM 预占 85%：48GB 卡约 40 GB，24GB 卡约 20 GB（报 KV cache 不足时设置 `max_model_len: 32768`） |
+| 采样卡显存 | 每卡 vLLM 预占 85%：48GB 卡约 40 GB，24GB 卡约 20 GB（24GB 卡上要设置 `max_model_len: 32768`，见 [start.md](./start.md) 第 1 节） |
 | 单个 step | rollout 约 3–6 分钟 + 裁判 224 场约 7 分钟（外部 API，与原文相近）+ 训练约 4–7 分钟（自定义 loss 要做两次前向） |
 | 20 step | 约 5–7 小时 |
 | Deep Research Bench 生成 100 题 | 约 5–20 分钟（每题贪心 1 条轨迹） |
