@@ -236,7 +236,7 @@ TEMPO 没有单独的评测脚本，判断"算法成立"主要看下一节列出
 ```bash
 uv run --extra alfworld python experiments/alfworld/eval.py \
     --base-model Qwen/Qwen3.5-4B \
-    --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/tempo-alfworld-qwen35-4b-final-weights \
+    --model-path ~/.cache/localtrio/runs/run_YYYYMMDD_HHMMSS_xxxxxx/sampler_weights/tempo-alfworld-qwen35-4b-final-weights \
     --data-root experiments/tempo/datasets/alfworld \
     --max-assistant-tokens 512 \
     --split all \

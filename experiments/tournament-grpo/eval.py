@@ -4,6 +4,8 @@ uv run python experiments/tournament-grpo/eval.py generate
 uv run python experiments/tournament-grpo/eval.py score
 
 两个阶段都逐题写入 jsonl；同一命令重跑时会跳过已完成的题目。
+generate 阶段在本地 vLLM 上采样（不启动 trainer）；--checkpoint 读取训练保存的
+checkpoint-step-N.json，其中的 sampler_path 是本地 LoRA 目录。score 阶段只调用外部 RACE 裁判。
 """
 
 import argparse
@@ -46,7 +48,13 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def path_name(value: str) -> str:
-    """把模型名或远程权重路径转换成单层目录名。"""
+    """把模型名或本地权重路径转换成单层目录名。
+
+    localtrio 的 sampler_path 是绝对路径 <home>/runs/<run_id>/sampler_weights/<name>，
+    只保留最后三段，避免输出目录名随 LOCALTRIO_HOME 或用户主目录变化。
+    """
+    if Path(value).is_absolute():
+        value = "/".join(Path(value).parts[-3:])
     return re.sub(r"[^A-Za-z0-9._-]+", "--", value).strip("-")
 
 

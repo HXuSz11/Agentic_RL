@@ -1,10 +1,7 @@
 r"""以完整交错思考轨迹异步训练 Qwen3.5 LoRA，默认使用 Qwen3.5-4B。
 
-在 experiments/spec-o3/ 目录下运行：
-
-# 首次运行前登录；已登录可跳过。SwanLab 云端记录需要 SwanLab 登录。
-uv run trio login
-uv run swanlab login
+在 experiments/spec-o3/ 目录下运行（训练在本机 GPU 上进行，不需要 trio login；
+SwanLab 云端记录需要先 uv run swanlab login）：
 
 uv run python train_sft.py
 
@@ -16,14 +13,20 @@ uv run python train_sft.py \
     --data-dir datasets/sft \
     --swanlab-mode online \
 
+训练 9B 时使用双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
+LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_sft.py \
+    --base-model Qwen/Qwen3.5-9B --epochs 2 --run-name spec-o3-sft-9b
+
 默认读取 datasets/sft/sft_train.jsonl 和 datasets/sft/sft_val.jsonl，
-每个 epoch 在远程分别保存 state（继续训练）和 sampler（推理评测）两份权重。
+每个 epoch 在本地分别保存 state（继续训练）和 sampler（推理评测）两份权重：
+~/.cache/localtrio/runs/<run_id>/states/<run-name>-epoch-<N>-state
+~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-name>-epoch-<N>-sampler
 两份权重的路径与验证 loss 打印到终端。
---base-model 同时选择 tokenizer、图像处理器和远程训练基模。
+--base-model 同时选择 tokenizer、图像处理器和本地训练基模（localtrio 在 GPU0 上加载）。
 --model-revision 指定所选模型的 HF 文件版本，默认 main；模板沿用 Qwen3.5。
---project-name 指定 SwanLab 项目，--run-name 指定实验名称和远程权重名称前缀。
+--project-name 指定 SwanLab 项目，--run-name 指定实验名称和本地权重目录名前缀。
 训练循环连续提交 batch，后台等待结果并记录 loss；每轮结束后验证并保存权重。
-脚本使用已保存的登录信息，不读取 .env 文件。
+脚本不读取 .env 文件，也不需要任何 API Key。
 --swanlab-mode local 或 disabled 无需登录 SwanLab。
 """
 
@@ -60,7 +63,10 @@ def build_training_batch(rows, tokenizer, processor):
         for datum in data
     )
 
-    # cross_entropy 在服务端求和；归一化后得到按监督 token 平均的梯度。
+    # 原版按“cross_entropy 在服务端求和”编写；归一化后得到按监督 token 平均的梯度。
+    # localtrio 默认（trainer.loss_normalization: active_tokens，与 PyTRIO 0.2.9 文档一致）
+    # 还会再除以整批 active token 数，梯度整体多缩小一个常数，Adam 对此基本不敏感；
+    # 想与原注释完全一致，可在配置里设 trainer.loss_normalization: sum。代码保持原样。
     for datum in data:
         datum.loss_fn_inputs["weights"] = trio.types.TensorData.from_numpy(
             datum.loss_fn_inputs["weights"].to_numpy() / tokens,
@@ -131,7 +137,7 @@ async def main(args):
         backend="pil",
     )
 
-    # 3. 初始化实验记录和远程 LoRA 训练任务。
+    # 3. 初始化实验记录和本地 LoRA 训练任务（trainer 子进程在 GPU0 上加载基模）。
     config = {
         **vars(args),
         "data_dir": str(args.data_dir),
@@ -161,7 +167,7 @@ async def main(args):
         log_lock = asyncio.Lock()
 
         for start in range(0, len(train), args.batch_size):
-            # 图片读取和 token 构造放到线程中，让事件循环继续处理远程结果。
+            # 图片读取和 token 构造放到线程中，让事件循环继续处理 trainer 返回的结果。
             data, tokens = await asyncio.to_thread(
                 build_training_batch,
                 train[start : start + args.batch_size],
@@ -169,7 +175,7 @@ async def main(args):
                 processor,
             )
 
-            # 两次调用都先取得 Future，远程按 FB → 更新 → 下一批 FB 的顺序执行。
+            # 两次调用都先取得 Future，trainer 进程按提交顺序串行执行：FB → 更新 → 下一批 FB。
             backward = await client.forward_backward_async(
                 data,
                 loss_fn="cross_entropy",

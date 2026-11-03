@@ -436,7 +436,7 @@ prefill → autoregressive sampling → reward parsing → correctness verificat
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重约 8～10GB，LoRA 参数、梯度与优化器状态约 1GB；激活和 logprob 分块随 micro-batch 变化，峰值大致在 20～40GB |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；一个 micro-batch 里短序列很多时，logprob 分块会再多占十几 GB（见快速启动的常见问题） |
 | GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
 
 时间的数量级可以这样推算：

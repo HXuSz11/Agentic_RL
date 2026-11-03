@@ -32,13 +32,13 @@
 
 所以我又花了一周左右，从 Medical SFT 开始设计实验，训练 Medical Teacher，尝试 Medical OPD，再一点点处理领域能力增强之后的通用能力遗忘。最后才有了这篇 Blog 里的两套方案，以及每个阶段完整的 MedQA-zh 和 C-Eval 评测结果。这一周里我从 Medical OPD 实验中获得了很多知识和反馈，也踩了不少坑。希望把这些过程写下来之后，能够帮助到同样在研究 OPD、模型蒸馏和领域能力训练的朋友。做完整个实验我大概花了 500 块钱左右吧，但这是我所有的实验操作，如果大家来复现的话大概可以在200块钱以内吧，如果只是完成 DeepMath OPD 的实验，应该只需要50 块钱吧，如果只是想要了解 OPD 的原理，简单跑几十个 step ，那应该几块钱吧？
 
-> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案在 4×A6000 上大约需要数天量级（估算，见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 在一两个小时内就能跑完。
+> 以上是原作者在 PyTRIO 云端的花费。本地版不计费，成本变成了 GPU 时间：完整复现两套方案在 4×A6000 上大约需要一到数天（估算，见下文「本地资源估算」）；只想理解 OPD 原理的话，几十个 step 在一两个小时内就能跑完。
 
 我很喜欢 Thinking Machines Lab 的 Lilian Weng 写的 Blog。读她的 Blog，会感觉她正在坐在对面，慢慢讲清楚自己为什么研究这个问题、做过哪些尝试、看到了什么结果，又从结果里得出了什么判断。希望我在未来的某天也可以做到这一步～
 
 为什么要用 PyTRIO 这种接口做 RL 算法的复现呢？原作者之前也尝试过用 Verl 等一些开源的 RL 训练框架，但认为这些框架都太重了：只是想研究损失函数，却要付出比研究损失函数更多的时间去配置训练环境、研究框架结构，这是本末倒置的事情。原文因此选择了 PyTRIO（相比 Tinker 对国内用户更友好，并且按 token 计费，显卡空转的时间不收费）。
 
-本地版保留了这套“只写训练循环和 loss”的 API：localtrio 与 PyTRIO 同名同参，脚本只把 `import pytrio as trio` 换成了 `import localtrio as trio`。代价是训推一体时的空等要自己承担：rollout 期间 GPU0 的训练卡在等采样，参数更新期间 GPU1–3 的采样卡在等训练，这是同步 on-policy 训练在固定几张卡上的固有成本。
+本地版保留了这套“只写训练循环和 loss”的 API：localtrio 与 PyTRIO 同名同参，训练脚本只把 `import pytrio as trio` 换成了 `import localtrio as trio`（评测脚本改为连接本地 OpenAI 兼容服务）。代价是训推一体时的空等要自己承担：rollout 期间 GPU0 的训练卡在等采样，参数更新期间 GPU1–3 的采样卡在等训练，这是同步 on-policy 训练在固定几张卡上的固有成本。
 
 > 所以大家希望下一篇是 GSPO 还是 Search-R1 呢？
 
@@ -755,7 +755,7 @@ uv run python experiments/medical-opd/01-eval-ceval.py \
 
 **显存（估算）**：
 
-- GPU0（训练）：4B bf16 权重 8–9GB + LoRA 与 AdamW 状态 + 激活。SFT 每步最多 16 × 2048 token，OPD 每步最多 16 条 × 约 2.2k token；trainer 按 `max_tokens_per_microbatch=16384` 切 micro-batch 并开启梯度检查点，峰值估计 20–30GB。
+- GPU0（训练）：4B bf16 权重 9–10GB + LoRA 与 AdamW 状态 + 激活。SFT 每步最多 16 × 2048 token，OPD 每步最多 16 条 × 约 2.2k token；trainer 按 `max_tokens_per_microbatch=16384` 切 micro-batch 并开启梯度检查点，峰值估计 20–30GB。
 - GPU1–3（采样）：每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`），4B 权重之外都是 KV cache；Teacher LoRA、Student LoRA 和 Base 共用这些副本。
 - 评测服务：单卡 vLLM 预占约 43GB（`localtrio serve` 默认 `gpu_memory_utilization=0.9`）。
 
@@ -770,7 +770,7 @@ uv run python experiments/medical-opd/01-eval-ceval.py \
 | MedQA-zh 评测（600 题，1024 token） | 单卡服务约 10–30 分钟 |
 | C-Eval 评测（300 题，8192 token） | 单卡服务约 0.5–1.5 小时 |
 
-**磁盘**：基模约 8–9GB；每个 sampler weights 几十 MB 量级，每个 state（含 AdamW 状态）约为它的数倍。
+**磁盘**：基模约 9–10GB；每个 sampler weights 几十到几百 MB，每个 state（含 AdamW 状态）约为它的数倍。
 
 ## 训练时应该看哪些指标？
 

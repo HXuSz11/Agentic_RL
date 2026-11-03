@@ -207,12 +207,12 @@ uv run python train.py --epochs 2 --batch-size 16 --save-every 60 --swanlab-mode
 
 **显存（估算）**：
 
-- GPU0：Qwen3.5-4B 的 bf16 权重约 8–9GB；LoRA rank 32 的参数与 AdamW 状态不到 1GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足。
-- GPU1–3：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 8–9GB，其余是 KV cache。
+- GPU0：Qwen3.5-4B 的 bf16 权重约 9–10GB；LoRA rank 32 的参数、梯度与 AdamW 状态约 1–2GB；每步 16 条记录、每条约 0.5–1.5k token，开启梯度检查点后激活约数 GB。合计约 15–25GB，48GB 余量充足。
+- GPU1–3：每个 vLLM 副本按 `gpu_memory_utilization=0.85` 预占约 40GB，其中权重约 9–10GB，其余是 KV cache。
 
 **耗时（估算）**：
 
-- 首次运行需要下载 Qwen3.5-4B（约 8–9GB）和数据集；
+- 首次运行需要下载 Qwen3.5-4B（约 9–10GB）和数据集；
 - 训练 270 步：每步是一次约 1–2 万 token 的前向 + 反向，A6000 上估计每步数秒到十几秒，加上模型加载约 0.5–1.5 小时；没装 `--extra kernels` 时 Qwen3.5 线性注意力走 PyTorch 回退实现，会明显更慢；
 - 温度校准（120 案例）+ 五项评测（约 1000 次长 prompt 前向）：3 个 vLLM 副本估计合计十几到几十分钟。
 

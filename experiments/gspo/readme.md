@@ -146,7 +146,7 @@ epsilon_high = 4e-4
 
 > **本地复现时看 clip fraction 要注意什么？**
 >
-> 这份实现每个 rollout batch 只做一次更新，理论上更新前的 sequence ratio 应该严格等于 1；实际不等于 1，主要来自“采样引擎算出的 logprob”和“训练引擎算出的 logprob”之间的数值差异。本地版中前者来自 vLLM（返回未经 temperature/top-p 处理的原始模型分布），后者来自 transformers 的 bf16 前向，两套 kernel 不同。GSPO 的裁剪区间只有 `[1 - 3e-4, 1 + 4e-4]`，长度归一化后的平均 log-ratio 只要超过约 `4e-4` 就会被裁剪，所以本地的 `gspo/sequence_clip_fraction` 和 `gspo/seq_ratio_mean` 很可能与原文的 13.11% 不同，它们首先反映的是本地训推之间的数值差异，而不是策略变化。
+> 这份实现每个 rollout batch 只做一次更新，理论上更新前的 sequence ratio 应该严格等于 1；实际不等于 1，主要来自“采样引擎算出的 logprob”和“训练引擎算出的 logprob”之间的数值差异。本地版中前者来自 vLLM（返回未经 temperature/top-p 处理的原始模型分布），后者来自 transformers 的 bf16 前向，两套 kernel 不同。GSPO 的裁剪区间只有 `[1 - 3e-4, 1 + 4e-4]`，长度归一化后的平均 log-ratio 只要超出约 `[-3e-4, 4e-4]` 就会落到裁剪区间外（是否真正截断梯度还取决于 advantage 的符号），所以本地的 `gspo/sequence_clip_fraction` 和 `gspo/seq_ratio_mean` 很可能与原文的 13.11% 不同，它们首先反映的是本地训推之间的数值差异，而不是策略变化。
 
 ### AIME25 评测
 
@@ -203,7 +203,7 @@ max_tokens = 8192
 
 | GPU | 角色 | 显存（估算） |
 | --- | --- | --- |
-| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重约 8～10GB，LoRA 参数、梯度与优化器状态约 1GB；激活和 logprob 分块随 micro-batch 变化，峰值大致在 20～40GB |
+| GPU0 | trainer：Qwen3.5-4B bf16 + LoRA rank 32 + AdamW，梯度检查点 | 基模权重（含视觉塔）约 9～10GB，LoRA 参数、梯度与 AdamW 状态约 1～2GB，加上激活常规约 15～25GB；一个 micro-batch 里短序列很多时，logprob 分块会再多占十几 GB（见快速启动的常见问题） |
 | GPU1/2/3 | 3 个 vLLM 采样副本（data parallel），每步热加载最新 LoRA | 每卡按 `gpu_memory_utilization=0.85` 预分配约 40GB（权重 + KV cache） |
 
 时间的数量级可以这样推算（正式配置：每步 8 组 × 8 条，completion 上限 4,096）：

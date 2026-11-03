@@ -8,7 +8,7 @@ uv run python eval.py \
     --max-seq-len 16384
 
 uv run python eval.py \
-    --model-path '<训练终端打印的 sampler_path>' \
+    --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/spec-o3-sft-epoch-2-sampler \
     --output outputs/sft-dev \
     --max-tokens 6144 \
     --max-seq-len 16384
@@ -19,6 +19,12 @@ uv run python eval.py \
     --output outputs/rl-27b-sft \
     --max-tokens 6144 \
     --max-seq-len 16384
+
+--model-path 是 train_sft.py / train_rl.py 终端打印的 sampler_path，即本地目录
+~/.cache/localtrio/runs/<run_id>/sampler_weights/<name>。
+评测只启动 vLLM，不启动 trainer：训练结束后可用 LOCALTRIO_SAMPLER_GPUS=0,1,2,3 用满 4 张卡。
+27B 级基模单张 48GB 卡放不下，需要在 localtrio.yaml 里设
+models.default: {gpus: [0, 1, 2, 3], tensor_parallel_size: 2}（4 张卡组成 2 个 TP=2 副本）。
 
 默认使用 datasets/rl/bench_dev.jsonl；输出分类指标、完整轨迹和工具图片。
 --base-model 默认 Qwen/Qwen3.5-4B，必须与 sampler 权重的基模一致。

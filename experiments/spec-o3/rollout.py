@@ -76,7 +76,7 @@ async def rollout(
         text = tokenizer.decode(sequence.tokens, skip_special_tokens=False)
         action = parse_action(text)
 
-        # 追加服务实际生成的 token，不重新编码 assistant 历史。
+        # 追加 sampler（vLLM）实际生成的 token，不重新编码 assistant 历史。
         if sequence.tokens:
             prompt = trio.ModelInput(chunks=[
                 *prompt.chunks,

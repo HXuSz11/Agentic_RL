@@ -235,7 +235,7 @@ uv run python experiments/agentopsd/analysis.py \
 | 1-step smoke | 约 5～15 分钟，大部分是模型加载与 vLLM 启动 |
 | 80-step 正式训练 | 约 10～20 小时 |
 | 一次完整评测（274 局） | 约 0.5～1.5 小时 |
-| CPU / 内存 | 正式配置同时持有 128 个 TextWorld 子进程，环境步进最多 32 个游戏组并发；建议 16 核以上、64GB 以上内存。CPU 核数少时环境会成为瓶颈 |
+| CPU / 内存 | 正式配置同时持有 128 个 TextWorld 子进程（16 个游戏组 × 8 条分支），每轮各游戏组的环境步进在线程池里并发执行；建议 16 核以上、64GB 以上内存。CPU 核数少时环境会成为瓶颈 |
 | 磁盘 | 模型约 10GB；每个 sampler weights 是一个 rank-32 LoRA adapter，state 额外包含 AdamW 状态，体积约为前者的数倍 |
 
 训练时间的估算依据：原文 PyTRIO 会话的用量统计为 train 30.52M tokens、sample 9.98M tokens、prefilling 762.21M tokens（其中 549.26M 命中缓存），折合每个 update 约 38 万训练 token、12 万采样 token。

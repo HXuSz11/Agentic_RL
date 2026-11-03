@@ -16,7 +16,7 @@ swanlab login                      # 可选；也可以给训练脚本加 --swan
 
 ```bash
 export LOCALTRIO_MODEL_SOURCE=modelscope
-uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基模（约 8–9GB）
+uv run python -m localtrio download Qwen/Qwen3.5-4B   # 可选：提前下载基模（约 9–10GB）
 ```
 
 数据准备脚本还会从 HuggingFace 下载 `typed-decisions` / `ToolACE`，并从 `raw.githubusercontent.com` 下载 Intern-Decision 的评测文件，网络受限时请配置代理或镜像。
@@ -100,11 +100,11 @@ uv run python analysis.py
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存（训练） | 约 15–25GB：权重 8–9GB + LoRA/AdamW < 1GB + 激活（梯度检查点） |
+| GPU0 显存（训练） | 约 15–25GB：权重 9–10GB + LoRA/AdamW 约 1–2GB + 激活（梯度检查点） |
 | 采样卡显存 | 每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`） |
 | 训练 270 步 | 约 0.5–1.5 小时（含模型加载；未安装 kernels 会明显更慢） |
 | 校准 + 五项评测 | 合计约十几到几十分钟（3 个 vLLM 副本） |
-| 磁盘 | 基模约 8–9GB；每个 LoRA 权重几十到上百 MB |
+| 磁盘 | 基模约 9–10GB；每个 LoRA 权重几十到几百 MB |
 
 ## 6. 常见问题
 

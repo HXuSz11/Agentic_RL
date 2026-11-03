@@ -1,6 +1,6 @@
 # 接下来我将复现 10 篇强化学习算法：第 9.4 篇，Spec-o3：我用 GRPO 找天上的星星 🌟
 
-> **快速开始：** 环境准备、数据下载、SFT、RL、评测与绘图的运行命令，见 [start.md](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/start.md)。
+> **快速开始：** 环境准备、GPU 布局、数据下载、SFT、RL、评测与绘图的运行命令，见 [start.md](./start.md)。
 
 <div align="center">
   <img src="./images/封面.png" alt="Spec-o3：我用 GRPO 找天上的星星" width="100%">
@@ -10,30 +10,37 @@
   <a href="https://github.com/datawhalechina/agentic-rl-lab"><img alt="Code" src="https://img.shields.io/badge/Code-agentic--rl--lab-2563eb?style=flat"></a>
   <a href="https://arxiv.org/abs/2601.06498"><img alt="Paper" src="https://img.shields.io/badge/Paper-Spec--o3-d94a45?style=flat"></a>
   <a href="https://huggingface.co/datasets/Maxwell-Jia/SpecVI-Bench"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-SpecVI--Bench-f59e0b?style=flat"></a>
-  <a href="https://docs.pytrio.com/docs"><img alt="PyTRIO" src="https://img.shields.io/badge/PyTRIO-0.2.9-7c3aed?style=flat"></a>
   <a href="https://www.zhihu.com/people/feng-qi-xia-pian"><img alt="Zhihu" src="https://img.shields.io/badge/Zhihu-知乎-4362f6?style=flat"></a>
   <a href="https://www.xiaohongshu.com/user/profile/63c2055e000000002502c58c"><img alt="Rednote" src="https://img.shields.io/badge/Rednote-小红书-e93c49?style=flat"></a>
   <a href="https://github.com/datawhalechina/agentic-rl-lab"><img alt="visitors" src="https://visitor-badge.laobi.icu/badge?page_id=KMnO4-zx.agentic-rl-lab.spec-o3"></a>
 </div>
 
+> **本地 GPU 版说明**
+>
+> 本章是 Datawhale [agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab) 原教程的本地 GPU 版本。原文的 SFT、GRPO 与采样跑在 PyTRIO 云端；本版代码通过 [localtrio](../../docs/content/guide/localtrio.md)（接口与 PyTRIO 同名同参，支持 `ImageChunk` 图文输入：transformers + PEFT 训练 LoRA，vLLM 采样）在 4 张 RTX A6000（48GB）上运行。4B 用默认布局（GPU0 训练、GPU1/2/3 采样）；9B 用 `configs/4xa6000-big-student.yaml`（GPU0,1 训练、GPU2,3 采样），详见[硬件规划](../../docs/content/guide/hardware.md)。光谱绘图工具本来就在本地 CPU 上运行，保持不变。
+>
+> 文中的指标、表格、曲线和结果图都是**原文在 PyTRIO 上的结果**；本地训练后端不同，复现数值可能有差异。感谢原作者（知乎 / 小红书主页见上方徽章）与 Datawhale 社区。
+
 > **代码与复现资源**
 >
-> - 本章实现：[SFT](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/train_sft.py) / [GRPO](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/train_rl.py) / [评测](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/eval.py) / [绘图](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/analysis.py)
+> - 本章实现：[SFT](./train_sft.py) / [GRPO](./train_rl.py) / [评测](./eval.py) / [绘图](./analysis.py)，运行步骤见[快速开始](./start.md)
+> - localtrio：[原理与 API 对照（含图文输入）](../../docs/content/guide/localtrio.md) / [4×A6000 显存与 GPU 布局](../../docs/content/guide/hardware.md)
 > - 论文：[Spec-o3: A Tool-Augmented Vision-Language Agent for Rare Celestial Object Candidate Vetting via Automated Spectral Inspection](https://arxiv.org/abs/2601.06498)
 > - 作者代码：[Maxwell-Jia/spec-o3](https://github.com/Maxwell-Jia/spec-o3)
 > - 公开数据：[Cold-start SFT](https://huggingface.co/datasets/Maxwell-Jia/Spec-o3-ColdStartSFT) / [SpecVI-Bench](https://huggingface.co/datasets/Maxwell-Jia/SpecVI-Bench)
-> - SwanLab：[查看本次实验公开的 SFT 与 RL 实验记录](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)
-> - PyTRIO：[官方文档](https://docs.pytrio.com/docs) / [多模态指南](https://docs.pytrio.com/docs/guide/vision)
+> - SwanLab：[原文（PyTRIO）公开的 SFT 与 RL 实验记录](https://swanlab.cn/@kmno4/agentic-rl-lab-spec-o3/v1/rjj3zx/runs)
 
 这是“接下来我将复现 10 篇强化学习算法”系列的第 9.4 篇。
 
-[Vision GRPO](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/vision-grpo/readme.md) 里，我们让模型看几何图做题；[ReTool](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/retool/readme.md) 里，我们让模型在解题过程中调用 Python。这次我想把两件事接起来：**模型一边看图、一边推理，还能主动调用工具，拿到一张新的图片继续分析。**
+[Vision GRPO](../vision-grpo/readme.md) 里，我们让模型看几何图做题；[ReTool](../retool/readme.md) 里，我们让模型在解题过程中调用 Python。这次我想把两件事接起来：**模型一边看图、一边推理，还能主动调用工具，拿到一张新的图片继续分析。**
 
 任务换到了天文学。给模型一张完整光谱，它需要判断这个天体是否属于某个目标类别。如果全图里的细节看不清，模型可以指定一个波长区间，让工具重新画出局部光谱，再根据新证据继续判断。
 
-我先用 Qwen3.5-4B 和 PyTRIO 跑了 **2 个 epoch 的 cold-start SFT，再接 1 个 epoch 的 GRPO**，随后补充了 **4B 和 9B 的 RL epoch 3** 评测。训练、工具交互和独立评测都已经走完，下面从结果开始讲。
+原文先用 Qwen3.5-4B 和 PyTRIO 跑了 **2 个 epoch 的 cold-start SFT，再接 1 个 epoch 的 GRPO**，随后补充了 **4B 和 9B 的 RL epoch 3** 评测。训练、工具交互和独立评测都已经走完；本地版用同一套代码在 4×A6000 上运行。下面从原文的结果开始讲。
 
 ## 0. 先看结果：4B 答对 175 题，9B 答对 191 题
+
+> 本节所有数值与结果图均为原文在 PyTRIO 上的结果。
 
 下面五组结果来自同一批 **256 条开发集样本**。Base、SFT 和前两组 RL 使用 `Qwen/Qwen3.5-4B`，最后一组使用 `Qwen/Qwen3.5-9B`。两个模型各自从对应的 SFT 权重开始 RL；表中保留首轮 4B RL epoch 1，便于和新增的 epoch 3 结果对照。
 
@@ -109,35 +116,31 @@ Spec-o3 将这种过程称为 iMCoT，即 Interleaved Multimodal Chain-of-Though
 → assistant 继续思考，再调用工具或输出最终答案
 ```
 
-训练也分成两步。Cold-start SFT 用现成的完整轨迹示范如何观察、调用工具和作答；GRPO 则让模型在训练题上自己完成交互，按最终答案与格式获得奖励。作者公开实现的 SFT 使用 LLaMA-Factory，RL 使用 VeRL；本章把这一过程接到了 PyTRIO。[作者训练说明](https://github.com/Maxwell-Jia/spec-o3#training-pipeline)
+训练也分成两步。Cold-start SFT 用现成的完整轨迹示范如何观察、调用工具和作答；GRPO 则让模型在训练题上自己完成交互，按最终答案与格式获得奖励。作者公开实现的 SFT 使用 LLaMA-Factory，RL 使用 VeRL；原文把这一过程接到了 PyTRIO，本地版再通过同名同参的 localtrio 接到 4×A6000 上。[作者训练说明](https://github.com/Maxwell-Jia/spec-o3#training-pipeline)
 
 原论文基模是 Qwen2.5-VL-3B/7B-Instruct。我们选择 Qwen3.5-4B 和 Qwen3.5-9B、LoRA rank 32，所以本文属于更换基模与训练栈后的方法迁移。后面的重点是这套交互与训练过程如何实现，以及我们实际测到了什么。
 
 ### 快速开始：先把 SFT 跑起来
 
-想先动手的读者，安装好 UV 后，可以直接执行下面的命令。首次使用时，按终端提示完成 PyTRIO 和 SwanLab 登录：
+想先动手的读者，安装好 UV 后，在仓库根目录执行 `uv sync --extra kernels`，再执行下面的命令。不需要 `trio login`；SwanLab 登录是可选的：
 
 ```bash
-git clone https://github.com/datawhalechina/agentic-rl-lab.git
-cd agentic-rl-lab/experiments/spec-o3
-uv sync --locked
-
-uv run trio login
-uv run swanlab login
+cd experiments/spec-o3
+uv run swanlab login            # 可选
 
 uv run python prepare_data.py sft
 uv run python train_sft.py --epochs 2
 ```
 
-这会将 SFT 数据和图片下载到 `datasets/sft/`，然后使用默认的 Qwen3.5-4B LoRA 配置启动 2 个 epoch 的冷启动训练。每轮结束后，终端会打印继续训练用的 `state_path` 和推理评测用的 `sampler_path`。
+这会将 SFT 数据和图片下载到 `datasets/sft/`，然后使用默认的 Qwen3.5-4B LoRA 配置，在 GPU0 上启动 2 个 epoch 的冷启动训练。每轮结束后，终端会打印继续训练用的 `state_path` 和推理评测用的 `sampler_path`，两者都是本地目录（`~/.cache/localtrio/runs/<run_id>/states/...` 和 `.../sampler_weights/...`）。
 
-接下来可以继续阅读实现细节。数据划分、完整训练参数、如何接上 RL，以及评测和绘图命令，都放在[第 8 节：如何运行这次实验](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/readme.md#8-如何运行这次实验)。
+接下来可以继续阅读实现细节。数据划分、完整训练参数、如何接上 RL，以及评测和绘图命令，都放在[第 8 节：如何运行这次实验](#8-如何运行这次实验)。
 
-## 3. 图片和工具调用怎样进入 PyTRIO？
+## 3. 图片和工具调用怎样进入训练接口？
 
 ### 3.1 在 Qwen3.5 的原生模板上改什么？
 
-Qwen3.5 原生模板已经包含思考、工具调用和图片格式，也会保留同一条工具交互链中的 reasoning。我们以[固定版本的官方模板](https://huggingface.co/Qwen/Qwen3.5-4B/blob/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/chat_template.jinja)为底稿，整理成 [qwen3_5_spec_o3.jinja](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/templates/qwen3_5_spec_o3.jinja)，主要做两件事：
+Qwen3.5 原生模板已经包含思考、工具调用和图片格式，也会保留同一条工具交互链中的 reasoning。我们以[固定版本的官方模板](https://huggingface.co/Qwen/Qwen3.5-4B/blob/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/chat_template.jinja)为底稿，整理成 [qwen3_5_spec_o3.jinja](./templates/qwen3_5_spec_o3.jinja)，主要做两件事：
 
 - 始终保留各轮 assistant 的 `reasoning_content`，包括跨新 user 问题的早期 reasoning，供完整轨迹监督使用。
 - 用 `{% generation %}` 标出 assistant 需要学习的范围，让 tokenizer 返回对应的监督 mask。
@@ -164,7 +167,7 @@ Hα region
 
 ### 3.2 图片通过 ImageChunk 进入上下文
 
-[protocol.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/protocol.py) 先渲染消息，再把每个 `<|image_pad|>` 替换为真实图片 chunk。整个输入保持文本、图片、文本的原始顺序。下面省略具体编码过程，只展示结构：
+[protocol.py](./protocol.py) 先渲染消息，再把每个 `<|image_pad|>` 替换为真实图片 chunk。整个输入保持文本、图片、文本的原始顺序。下面省略具体编码过程，只展示结构：
 
 ```python
 prompt = trio.ModelInput(
@@ -180,7 +183,9 @@ prompt = trio.ModelInput(
 )
 ```
 
-`data` 装的是 PNG 字节；文件路径只用于本地读取。`expected_tokens` 由匹配基模的 image processor 根据图片尺寸计算，用来确定图片在序列中占多少个视觉位置。工具返回第二张、第三张图时，也按同样的方式追加。[PyTRIO 多模态指南](https://docs.pytrio.com/docs/guide/vision)
+`data` 装的是 PNG 字节；文件路径只用于本地读取。`expected_tokens` 由匹配基模的 image processor 根据图片尺寸计算，用来确定图片在序列中占多少个视觉位置。工具返回第二张、第三张图时，也按同样的方式追加。
+
+本地 localtrio 对 `ImageChunk` 的处理分两端（详见 [localtrio 指南的图文输入一节](../../docs/content/guide/localtrio.md)）：训练端用与基模匹配的 image processor 处理像素，把占位符展开为 `expected_tokens` 个视觉 token，并校验这个数与 processor 的计算一致；采样端给 vLLM 一个 `<|image_pad|>` 加上 `multi_modal_data`，由 vLLM 按真实尺寸展开。视觉塔不加 LoRA。
 
 这个长度直接关系到训练对齐：一张图片占据的所有位置都要进入上下文，但对应的训练权重为零。随后 `target_tokens`、mask 等数组统一做自回归右移，保证每个位置预测的是下一个 token。
 
@@ -188,7 +193,7 @@ prompt = trio.ModelInput(
 
 工具使用的是公开 Parquet 中附带的光谱数值。`prepare_data.py` 将它们提取到 `datasets/rl/spectra/*.npz`，其中保存 `wavelength`、`flux` 和 `redshift`。初始图片单独保存在 `datasets/rl/images/`。
 
-[tools.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/tools.py) 的核心计算很短：
+[tools.py](./tools.py) 的核心计算很短：
 
 ```python
 wavelength = np.asarray(wavelength) / (1 + redshift)
@@ -227,7 +232,7 @@ Cold-start 数据已经包含“思考、工具调用、图片观察、最终回
 
 完整示范轨迹把这些环节连在一起：`<think>` 中写分析，`<tool_call>` 中指定工具和波长区间，工具观察回填后开启下一轮思考，最后用 `<answer>` 包住结论与解释。SFT 对各轮 assistant 的输出进行监督，让模型学习如何按这套协议组织分析和动作，为后续 GRPO 的多轮探索打下基础。
 
-训练由 [train_sft.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/train_sft.py) 异步执行，使用 `cross_entropy`，只监督 assistant 生成的内容。下面保留首轮 4B SFT 的训练记录：batch size 4、学习率 `2e-5`、LoRA rank 32、2 个 epoch，共 **424 个训练 step**。每轮结束后计算验证 loss，并保存供后续训练和评测使用的权重。
+训练由 [train_sft.py](./train_sft.py) 异步执行，使用 `cross_entropy`，只监督 assistant 生成的内容。下面保留原文在 PyTRIO 上的首轮 4B SFT 训练记录：batch size 4、学习率 `2e-5`、LoRA rank 32、2 个 epoch，共 **424 个训练 step**。每轮结束后计算验证 loss，并保存供后续训练和评测使用的权重。
 
 ![Spec-o3 cold-start SFT：训练 loss 与每批 assistant 监督 token 数](./images/swanlab-sft.png)
 
@@ -291,9 +296,13 @@ $$
 
 ### 5.4 只更新实际生成的 assistant token
 
-[rollout.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/rollout.py) 每轮直接保存服务返回的 token 和 logprob。续写时保留实际生成的历史，仅编码新增的工具观察与下一轮前缀，避免重新渲染 assistant 文本后改变 token 序列。
+[rollout.py](./rollout.py) 每轮直接保存采样端（vLLM）返回的 token 和 logprob。续写时保留实际生成的历史，仅编码新增的工具观察与下一轮前缀，避免重新渲染 assistant 文本后改变 token 序列。
 
-一条轨迹中的 assistant token 共享该轨迹的 advantage。问题、图片、工具观察和程序补入的分隔符只作为上下文，对应的 advantage 为零。随后整批 Datum 交给 PyTRIO 内置 `ppo` loss，裁剪范围为 `[0.8, 1.2]`，每批更新一次。
+一条轨迹中的 assistant token 共享该轨迹的 advantage。问题、图片、工具观察和程序补入的分隔符只作为上下文，对应的 advantage 为零。随后整批 Datum 交给内置 `ppo` loss（localtrio 与 PyTRIO 同名同语义），裁剪范围为 `[0.8, 1.2]`，每批更新一次。
+
+> **本地版说明：** `train_rl.py` 和 `train_sft.py` 都先手动把 advantage / weights 除以整批 assistant token 数，原版注释按“服务端对 loss 求和”的口径编写。localtrio 默认按整批 active token 数归一化（与 PyTRIO 0.2.9 文档一致），因此梯度会整体多一个常数缩放；Adam 对梯度的整体缩放基本不敏感，代码保持原样。想与原注释的口径完全一致，可在 localtrio 配置里设 `trainer.loss_normalization: sum`。
+
+下面的训练曲线是原文在 PyTRIO 上的记录。
 
 ![Spec-o3 首轮 4B RL epoch 1 的训练曲线：reward、严格格式合规率、参与更新的 assistant token 数与训练正确率](./images/swanlab-rl.png)
 
@@ -311,49 +320,58 @@ SFT 让模型学习“**思考 → 工具调用 → 图片观察 → 继续思�
 
 有了这层冷启动，后续 GRPO 就能在模型已经熟悉的交互流程上，通过最终奖励继续优化波段选择和分类判断。
 
-## 7. PyTRIO 给科研带来的价值
+## 7. 本地版：在 4×A6000 上跑需要什么？
 
-原论文使用 **8 张 NVIDIA H100** 完成训练。[论文 §4.2](https://arxiv.org/html/2601.06498v1#S4.SS2) 对想尝试这类研究的人来说，准备算力、部署多卡训练环境、衔接训练和推理，本身就需要投入不少精力。这次我通过 PyTRIO，用 Qwen3.5-4B LoRA 跑通了 SFT、工具交互和 GRPO，模型计算与权重存储都交给远程服务。
+原论文使用 **8 张 NVIDIA H100** 完成训练。[论文 §4.2](https://arxiv.org/html/2601.06498v1#S4.SS2) 原文通过 PyTRIO，用 Qwen3.5-4B LoRA 跑通了 SFT、工具交互和 GRPO，模型计算与权重存储都交给远程服务，首轮 4B 实验从看论文到完成只用了不到一天。
 
-这套方式对科研的价值，在实验推进过程中很具体：
+本地版把同一套代码搬到 4 张 A6000 上。分工没有变：Python 主进程负责光谱绘图、消息组织和奖励计算；变化的是训练与采样由本机的 trainer 子进程和 vLLM 子进程执行，checkpoint 是本地目录，接口和 SwanLab 记录方式与原文一致。研究者仍然可以把时间留给交错思维链、图文输入、工具观察、reward 和评测规则。
 
-- **更快启动一个想法。** 准备好数据和 Python 训练循环，就能通过 API 提交计算。本地负责光谱绘图、消息组织和奖励计算，多卡训练的执行由服务端处理，普通 CPU 机器也能作为实验入口。[PyTRIO 介绍](https://docs.pytrio.com/docs)
-- **更方便并行做对照实验。** 后续比较不同学习率、奖励设置或随机种子时，可以分别创建训练任务，同时推进多组实验。各任务的 LoRA 权重和优化器状态独立，由服务端调度共享算力，实验组织不必与某一台 GPU 服务器绑定。[多作业调度说明](https://docs.pytrio.com/docs/clock-cycle)
-- **把时间留给研究问题。** 这次我主要处理的是交错思维链、图文输入、工具观察、reward 和评测规则。修改这些逻辑后，可以继续沿用已有的训练接口、checkpoint 和 SwanLab 记录，逐步验证自己的判断。
+### 7.1 GPU 布局
 
-首轮 4B 实验的实际用量保留在下面：SFT 与 RL epoch 1 两个训练会话合计 **¥699.68**，评测与调试会话另计。这个金额仅对应截图中的两个历史训练会话，新增的 4B、9B epoch 3 训练与评测费用未计入。
+| 基模 | 预设 | GPU0 | GPU1 | GPU2 | GPU3 |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3.5-4B | 默认（不写配置，即 `configs/4xa6000.yaml`） | 训练 | 采样 #1 | 采样 #2 | 采样 #3 |
+| Qwen3.5-9B | `configs/4xa6000-big-student.yaml` | 训练（按层切分） | 训练（按层切分） | 采样 #1 | 采样 #2 |
 
-![首轮 4B Spec-o3 实验的 PyTRIO 会话用量与费用，标出 SFT、RL epoch 1 及评测与调试会话](./images/pytrio-consume.png)
+9B 的 SFT 和 RL 命令前加 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml`（在 `experiments/spec-o3/` 目录运行时）。评测只需要 vLLM，4B 和 9B 都可以用默认布局，训练结束后还可以用 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3` 把 4 张卡都用来采样。
 
-截图中明确标注的两个训练会话如下，M 表示百万 token：
+### 7.2 本地资源估算
 
-| 会话 | Prefilling | Train | Sample | 费用 |
-| --- | ---: | ---: | ---: | ---: |
-| SFT 冷启动 | 0 | 6.11M | 0 | ¥27.72 |
-| 4B RL epoch 1 | 239.39M | 79.13M | 26.38M | ¥671.96 |
-| **这两个训练会话合计** | | | | **¥699.68** |
+原文记录了首轮 4B 实验两个训练会话的 token 用量（M 表示百万 token），本地的耗时估算以它为依据：
 
-首轮 4B 实验从看论文到完成，我只花了**不到一天的时间**。
+| 会话（原文 PyTRIO） | Prefilling | Train | Sample |
+| --- | ---: | ---: | ---: |
+| SFT 冷启动（2 epoch） | 0 | 6.11M | 0 |
+| 4B RL epoch 1 | 239.39M | 79.13M | 26.38M |
 
-PyTRIO 最有价值的地方，在与**缩短了从“我想试试这个方法”到“我拿到了可以分析和比较的结果”之间的距离**。先把一个想法跑起来，再增加对照、检查失败轨迹、调整训练方案，这样的迭代节奏对科研很重要。
+> 以下数字按模型规模和上表 token 量推算，是**粗略估算，未经实测**；多轮工具交互的长尾生成对总耗时影响很大。
+
+| 项目 | 估算（未实测） |
+| --- | --- |
+| 4B 训练卡显存 | 4B bf16 权重约 9–10 GB + LoRA/AdamW + 激活，单条 16,384 token（含图片）时约 20–30 GB |
+| 9B 训练显存（双卡） | 权重约 19–20 GB 按层分到 GPU0/1，每卡约 15–25 GB |
+| 采样卡显存 | 每卡 vLLM 预占约 40 GB（`gpu_memory_utilization`：默认 0.85，9B 预设 0.88） |
+| 4B SFT 2 epoch | 约 1–2 小时 |
+| 4B RL 1 epoch（389 个 rollout batch） | 约 1.5–3 天（训练约 13–22 小时 + 多轮 rollout） |
+| 9B RL 1 epoch | 约为 4B 的 2 倍或更多（训练更慢、采样副本只有 2 个） |
+| 256 条开发集评测 | 约 0.5–2 小时（并发 16） |
+
+RL 的 epoch 很长，建议先用 `--epochs 1` 和默认 `--save-every 100` 跑，确认中间 checkpoint 正常保存后再放到后台。
 
 ## 8. 如何运行这次实验？
 
-### 8.1 安装环境并登录
+### 8.1 安装环境
 
-在已安装 UV 的机器上，先获取项目并安装锁定依赖：
+在仓库根目录安装依赖，再进入本章目录：
 
 ```bash
-git clone https://github.com/datawhalechina/agentic-rl-lab.git
-cd agentic-rl-lab
-uv sync --locked
+uv sync --extra kernels          # torch / transformers / peft / vllm + Qwen3.5 线性注意力训练 kernel
+uv run python -m localtrio info  # 确认 4 张 A6000 与 GPU 布局
 cd experiments/spec-o3
-
-uv run trio login
-uv run swanlab login
+uv run swanlab login             # 可选；用 --swanlab-mode disabled 可跳过
 ```
 
-已有项目可直接在根目录执行 `uv sync --locked`，再进入 `experiments/spec-o3/`。**下面所有命令都在这个目录运行。** 项目使用 Python 3.13+、PyTRIO 0.2.9；本地负责数据处理、绘图和训练调度，模型训练与采样由远程服务执行。训练所需的认证使用 CLI 保存的登录信息。
+**下面所有命令都在 `experiments/spec-o3/` 目录运行。** 不需要 `trio login` 或 API Key：数据处理、绘图和训练调度在主进程，模型训练与采样在本机 GPU 上（4B 默认 GPU0 训练、GPU1/2/3 采样）。脚本会直接从 Hugging Face 读取 tokenizer 与 image processor，国内网络可设置 `HF_ENDPOINT`。
 
 ### 8.2 先准备 SFT，再准备 RL 数据
 
@@ -400,17 +418,31 @@ uv run python train_sft.py \
 
 脚本默认只训练 1 个 epoch，因此这里显式传入 `--epochs 2`。`--model-revision` 默认是 `main`，本次 SFT 记录也使用了这一设置；需要固定 tokenizer 与 image processor 文件时，可传入本章数据准备和评测使用的 `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`。
 
-训练 9B 时，将 `--base-model` 改为 `Qwen/Qwen3.5-9B`，并使用独立的 `--run-name`。固定 revision 时应选择对应模型仓库的版本，上面的 commit 仅用于 4B。
+训练 9B 时，将 `--base-model` 改为 `Qwen/Qwen3.5-9B`，使用独立的 `--run-name`，并切换到双卡训练布局（GPU0,1 训练、GPU2,3 采样）：
 
-训练结束后，保留 epoch 2 对应的 `state_path` 和 `sampler_path`。它们分别用于下一步 RL 和 SFT 模型评测。
+```bash
+LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_sft.py \
+    --base-model Qwen/Qwen3.5-9B \
+    --epochs 2 \
+    --run-name spec-o3-sft-9b
+```
+
+固定 revision 时应选择对应模型仓库的版本，上面的 commit 仅用于 4B。
+
+训练结束后，保留 epoch 2 对应的 `state_path` 和 `sampler_path`。它们分别用于下一步 RL 和 SFT 模型评测，都是本地目录：
+
+```text
+state_path（继续训练）：~/.cache/localtrio/runs/<run_id>/states/spec-o3-sft-epoch-2-state
+sampler_path（推理评测）：~/.cache/localtrio/runs/<run_id>/sampler_weights/spec-o3-sft-epoch-2-sampler
+```
 
 ### 8.4 从 SFT state 接着训练 RL
 
-把下面的占位符替换成 **PyTRIO 权重控制台获取或训练终端打印的 state_path**：
+把下面的占位符替换成 **train_sft.py 终端打印的 state_path**（本地目录）：
 
 ```bash
 uv run python train_rl.py \
-    --state-path '<SFT epoch 2 的 state_path>' \
+    --state-path ~/.cache/localtrio/runs/<run_id>/states/spec-o3-sft-epoch-2-state \
     --epochs 1 \
     --batch-size 8 \
     --group-size 8 \
@@ -425,7 +457,7 @@ uv run python train_rl.py \
 
 `--max-tokens` 限制单次生成长度；`--max-seq-len` 限制包含文字、图片与工具历史的总上下文。`--max-turns 8` 是最多 8 轮 assistant 生成，最终答案也占一轮；当前实现最多执行前 7 轮的工具调用。
 
-上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模。不同实验使用独立的 `--run-name`。
+上面保留首轮 4B 实验的 1 epoch 命令。要从 SFT state 开始训练 3 个 epoch，将 `--epochs` 改为 `3`；训练 9B 时传入 9B SFT 的 `state_path`，脚本会从 checkpoint 恢复对应基模，命令前同样加 `LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml`。不同实验使用独立的 `--run-name`。
 
 当前脚本每 100 个累计 rollout step 保存一次 state 和 sampler，epoch 结束时也保存。这个周期保存功能是在首次 RL 实验之后补上的，便于后续运行时保留中间权重。训练日志里同时记录 rollout step 与实际 updates，两者在跳过整批更新时会有差别。
 
@@ -441,11 +473,11 @@ uv run python train_rl.py \
 | RL 每批题目数 / 每题轨迹数 | 64 / 8 | 8 / 8 |
 | 序列预算 | SFT cutoff 32,768；RL max response 32,768 | 训练轨迹按 16,384 总上下文安排 |
 
-作者参数来自固定提交的 [SFT YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/cold_start/examples/spec_o3/qwen2_5_sft_full.yaml) 与 [RL YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/reinforcement_learning/recipe/spec_o3/configs/spec_o3.yaml)。本章也未逐项复刻上游 loss 的全部细节，因此这些结果用于观察本地方法迁移，不能直接与论文榜单数值对齐。
+作者参数来自固定提交的 [SFT YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/cold_start/examples/spec_o3/qwen2_5_sft_full.yaml) 与 [RL YAML](https://github.com/Maxwell-Jia/spec-o3/blob/dd6eb9130d9d850cd67b2a6c55e651da08ab28cb/reinforcement_learning/recipe/spec_o3/configs/spec_o3.yaml)。本章也未逐项复刻上游 loss 的全部细节，因此这些结果用于观察本地方法迁移，不能直接与论文榜单数值对齐。本地版沿用首轮 4B 实验的全部超参；训练后端从 PyTRIO 换成 localtrio，数值实现不会逐位一致。
 
 ### 8.5 评测 4B Base、SFT，以及 4B / 9B RL
 
-下面保留开头结果表对应的生成预算。将占位符替换成各自的 **sampler_path**：
+下面保留开头结果表对应的生成预算。将占位符替换成各自的 **sampler_path**（训练终端打印的本地目录，形如 `~/.cache/localtrio/runs/<run_id>/sampler_weights/<run-name>-epoch-<N>-sampler`）。评测只启动 vLLM，9B 也可以用默认布局；训练结束后可在命令前加 `LOCALTRIO_SAMPLER_GPUS=0,1,2,3`：
 
 ```bash
 # Base：不传 model-path，脚本自动追加格式提醒。
@@ -513,18 +545,18 @@ uv run python eval.py \
 uv run python analysis.py
 ```
 
-脚本将本文的五组固定结果绘制为 `images/results_comparison.png`，并导出同名矢量 PDF。四个面板分别比较 Accuracy、Macro F1、严格格式合规率和答对题数；每组都标明模型规模与训练阶段。它不读取新的评测目录；后续得到新结果时，需要同步更新脚本中的数据和图注。
+脚本将本文的五组固定结果绘制为 `images/results_comparison.png`，并导出同名矢量 PDF。四个面板分别比较 Accuracy、Macro F1、严格格式合规率和答对题数；每组都标明模型规模与训练阶段。它不读取新的评测目录，脚本里固定的是原文在 PyTRIO 上的结果；本地评测得到新结果后，需要同步更新脚本中的数据和图注（建议另存一份脚本或换输出文件名，保留原文结果图）。
 
 代码阅读可以从数据准备开始，沿着输入、工具交互和训练向下走：
 
 | 文件 | 职责 |
 | --- | --- |
-| [prepare_data.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/prepare_data.py) | 下载、清理和划分数据，保存图片与光谱数组 |
-| [templates/qwen3_5_spec_o3.jinja](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/templates/qwen3_5_spec_o3.jinja) | 渲染多轮图文消息，标出 assistant 监督区间 |
-| [protocol.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/protocol.py) | 构造图片 chunk、SFT/RL Datum，解析动作 |
-| [tools.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/tools.py) | 按波长区间重绘局部光谱 |
-| [rollout.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/rollout.py) | 执行一条完整工具轨迹，保存实际 token 与 logprob |
-| [train_sft.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/train_sft.py) | 异步 SFT、验证和两份权重保存 |
-| [train_rl.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/train_rl.py) | 组采样、奖励、advantage、PPO 更新与 checkpoint |
-| [eval.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/eval.py) | 独立评测，保存分类指标、轨迹和工具图片 |
-| [analysis.py](https://github.com/datawhalechina/agentic-rl-lab/blob/main/experiments/spec-o3/analysis.py) | 绘制本文的固定结果 |
+| [prepare_data.py](./prepare_data.py) | 下载、清理和划分数据，保存图片与光谱数组 |
+| [templates/qwen3_5_spec_o3.jinja](./templates/qwen3_5_spec_o3.jinja) | 渲染多轮图文消息，标出 assistant 监督区间 |
+| [protocol.py](./protocol.py) | 构造图片 chunk、SFT/RL Datum，解析动作 |
+| [tools.py](./tools.py) | 按波长区间重绘局部光谱 |
+| [rollout.py](./rollout.py) | 执行一条完整工具轨迹，保存实际 token 与 logprob |
+| [train_sft.py](./train_sft.py) | 异步 SFT、验证和两份权重保存 |
+| [train_rl.py](./train_rl.py) | 组采样、奖励、advantage、PPO 更新与 checkpoint |
+| [eval.py](./eval.py) | 独立评测，保存分类指标、轨迹和工具图片 |
+| [analysis.py](./analysis.py) | 绘制本文的固定结果 |

@@ -223,7 +223,7 @@ uv run --extra alfworld python experiments/alfworld/eval.py \
 ```bash
 uv run --extra alfworld python experiments/alfworld/eval.py \
     --base-model Qwen/Qwen3.5-4B \
-    --model-path ~/.cache/localtrio/runs/<run_id>/sampler_weights/alfworld-agent-rl-qwen35-4b-update-80-weights \
+    --model-path ~/.cache/localtrio/runs/run_YYYYMMDD_HHMMSS_xxxxxx/sampler_weights/alfworld-agent-rl-qwen35-4b-update-80-weights \
     --split all \
     --games-per-batch 16 \
     --temperature 0.01 \

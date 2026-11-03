@@ -1,17 +1,21 @@
 r"""从 SFT state 权重开始，用多轮工具轨迹进行 GRPO 训练。
 
-在 experiments/spec-o3/ 目录下运行，首次使用先执行 uv run trio login 和 uv run swanlab login：
+在 experiments/spec-o3/ 目录下运行（本机 GPU 训练，不需要 trio login；SwanLab 云端记录需先
+uv run swanlab login）。--state-path 填 train_sft.py 终端打印的本地 state 目录：
 
-uv run python train_rl.py --state-path '<PyTrio 权重控制台获取或训练终端打印的 state_path>'
+uv run python train_rl.py --state-path ~/.cache/localtrio/runs/<run_id>/states/spec-o3-sft-epoch-2-state
 
 uv run python train_rl.py \
-    --state-path '<PyTrio 权重控制台获取或训练终端打印的 state_path>' \
+    --state-path ~/.cache/localtrio/runs/<run_id>/states/spec-o3-sft-epoch-2-state \
     --epochs 1 \
     --batch-size 8 \
     --group-size 8 \
     --learning-rate 1e-6 \
     --save-every 50 \
     --swanlab-mode online
+
+从 9B SFT state 开始时使用双卡训练布局：
+LOCALTRIO_CONFIG=../../configs/4xa6000-big-student.yaml uv run python train_rl.py --state-path <9B SFT state>
 """
 
 import argparse
@@ -249,14 +253,16 @@ async def main(args):
                     data = [datum for datum, _ in samples]
                     tokens = sum(count for _, count in samples)
 
-                    # 3. 按整个 batch 的 assistant token 数缩放 advantage。
+                    # 3. 按整个 batch 的 assistant token 数缩放 advantage（原版按服务端求和编写；
+                    #    localtrio 默认还会除以整批 active token 数，梯度整体多一个常数缩放，
+                    #    Adam 对此基本不敏感；设 trainer.loss_normalization: sum 可与原注释一致）。
                     for datum in data:
                         advantages = datum.loss_fn_inputs["advantages"].to_numpy()
                         datum.loss_fn_inputs["advantages"] = trio.types.TensorData.from_numpy(
                             advantages / tokens,
                         )
 
-                    # 整批交给 PyTRIO 自动拆分、累积梯度，只更新一次参数。
+                    # 整批交给 localtrio 的 trainer：按 max_tokens_per_microbatch 自动拆分、累积梯度，只更新一次参数。
                     backward = await client.forward_backward_async(
                         data,
                         loss_fn="ppo",
@@ -270,7 +276,7 @@ async def main(args):
                     await update
                     updates += 1
                     step_progress.set_postfix_str("完成")
-                    # Future 返回整个 batch 聚合后的服务端指标。
+                    # Future 返回整个 batch 聚合后的 trainer 指标。
                     metrics.update({
                         f"trainer/{key}": value
                         for key, value in result.metrics.items()
@@ -313,7 +319,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--state-path",
         required=True,
-        help="PyTrio 权重控制台获取或训练终端打印的 state_path",
+        help="train_sft.py / train_rl.py 终端打印的本地 state 目录（~/.cache/localtrio/runs/<run_id>/states/<name>）",
     )
     parser.add_argument(
         "--resume-optimizer",

@@ -52,7 +52,8 @@ class Trajectory:
 
 def consume_assistant(trajectory: Trajectory, sequence: Any, tokenizer: Any, config: RolloutConfig) -> ToolCall | None:
     """记录本轮生成的 token 和 logprob，返回要执行的工具调用；轨迹结束时返回 None。"""
-    # PyTRIO 的 text 会去掉停止符，但 tokens 和 logprobs 保留了 </call_tool>，和作者 include_stop_str_in_output 一致。
+    # 采样端（localtrio 的 vLLM，与 PyTRIO 一致）的 text 会去掉停止符，但 tokens 和 logprobs
+    # 保留了 </call_tool>，和作者 include_stop_str_in_output 一致。
     trajectory.response_tokens.extend(sequence.tokens)
     trajectory.response_mask.extend([1] * len(sequence.tokens))
     trajectory.logprobs.extend(sequence.logprobs)

@@ -387,16 +387,16 @@ uv run python experiments/general-opd/01-demo-sync.py \
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0（训练） | 约 12–20GB：4B 权重 8–9GB + LoRA/AdamW + 激活（梯度检查点） |
+| GPU0（训练） | 约 12–20GB：4B 权重 9–10GB + LoRA/AdamW + 激活（梯度检查点） |
 | GPU1（student 采样） | vLLM 预占约 40GB（`gpu_memory_utilization=0.85`） |
 | GPU2、GPU3（teacher） | 每卡约 27GB 权重 + KV cache，预占约 43GB（`gpu_memory_utilization=0.90`） |
-| 磁盘 | 27B 约 54GB + 4B 约 8–9GB + DeepMath 分片 |
+| 磁盘 | 27B 约 54GB + 4B 约 9–10GB + DeepMath 分片 |
 | 启动 | 27B teacher 的 vLLM 引擎加载与初始化约数分钟（不含下载） |
 | 每步耗时 | 同步版默认参数（batch 2 × group 2 × 512 token）约 20–40 秒；batch 4 × group 4 约 40–80 秒；异步版通常明显更快 |
 
 ### 5. 卡不够或想省卡：换小一点的 teacher
 
-27B 教师必须占两张卡。如果想把卡留给 student 采样，或只有 2–3 张卡，可以换成同系列更小的 teacher，例如 `Qwen/Qwen3.5-9B`（bf16 约 18GB，单卡即可）。teacher 变弱后 reverse KL 提供的信号也会变弱，蒸馏效果通常不如 27B，结果不能直接和原文比较；也要确认 teacher 与 student 的 tokenizer 兼容。
+27B 教师必须占两张卡。如果想把卡留给 student 采样，或只有 2–3 张卡，可以换成同系列更小的 teacher，例如 `Qwen/Qwen3.5-9B`（bf16 约 19–20GB，单卡即可）。teacher 变弱后 reverse KL 提供的信号也会变弱，蒸馏效果通常不如 27B，结果不能直接和原文比较；也要确认 teacher 与 student 的 tokenizer 兼容。
 
 把下面的内容保存为自己的配置文件（例如仓库根目录的 `my-opd-9b.yaml`）：
 

@@ -154,14 +154,14 @@ uv run python experiments/medical-opd/01-eval-ceval.py   --model "$WEIGHTS" --ma
 
 | 项目 | 估算 |
 | --- | --- |
-| GPU0 显存（训练） | 峰值约 20–30GB（4B 权重 8–9GB + LoRA/AdamW + 梯度检查点下的激活） |
+| GPU0 显存（训练） | 峰值约 20–30GB（4B 权重 9–10GB + LoRA/AdamW + 梯度检查点下的激活） |
 | GPU1–3 显存（采样） | 每个 vLLM 副本预占约 40GB（`gpu_memory_utilization=0.85`） |
 | 评测服务 | 单卡预占约 43GB（`localtrio serve` 默认 `gpu_memory_utilization=0.9`） |
 | Medical SFT | 每步约 10–25 秒；总步数 = 3 × ⌈样本数 / 16⌉（启动时打印） |
 | Medical OPD / Base-anchor OPD（各 300 步） | 每步约 1–1.5 分钟，各约 5–8 小时 |
 | IDT-OPD（600 步） | 约 10–16 小时 |
 | MedQA-zh / C-Eval 评测 | 单卡服务约 10–30 分钟 / 0.5–1.5 小时 |
-| 磁盘 | 基模约 8–9GB；每个 sampler weights 几十 MB 量级，state 约为其数倍 |
+| 磁盘 | 基模约 9–10GB；每个 sampler weights 几十到几百 MB，state 约为其数倍 |
 
 ## 8. 常见问题
 

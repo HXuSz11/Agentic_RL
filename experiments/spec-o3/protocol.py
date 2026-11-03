@@ -53,7 +53,7 @@ def render_messages(messages, tokenizer, generation=False):
 
 def image_chunk(path, image_processor):
     """把一张图编码为 PNG，并用匹配的处理器计算视觉 token 数。"""
-    # 原图中透明背景合成到白色；传入 processor 和服务端的是同一张 RGB 图。
+    # 原图中透明背景合成到白色；传入 processor 和 localtrio 引擎（训练端 / vLLM）的是同一张 RGB 图。
     with Image.open(path) as source:
         rgba = source.convert("RGBA")
         image = Image.alpha_composite(
