@@ -18,7 +18,7 @@ import uuid
 from typing import Any
 
 from ..models import image_token_id, is_multimodal, load_tokenizer
-from .common import decode_image, split_stop
+from .common import adapter_version, decode_image, split_stop
 
 logger = logging.getLogger("localtrio.vllm_sampler")
 
@@ -73,8 +73,10 @@ class VLLMSamplerEngine:
             "seed": 0,
             "disable_log_stats": True,
         }
-        if self.multimodal and cfg.get("limit_mm_per_prompt"):
-            wanted["limit_mm_per_prompt"] = cfg["limit_mm_per_prompt"]
+        if self.multimodal:
+            # 多模态模型默认每个 prompt 最多 8 张图（Spec-o3 一条轨迹最多 8 张），并关闭视频输入，
+            # 避免 vLLM 按更大的默认上限预留编码器显存。可在配置里覆盖。
+            wanted["limit_mm_per_prompt"] = cfg.get("limit_mm_per_prompt") or {"image": 8, "video": 0}
         if not wanted["enable_lora"]:
             for key in ("max_lora_rank", "max_loras", "max_cpu_loras"):
                 wanted.pop(key)
@@ -113,9 +115,12 @@ class VLLMSamplerEngine:
             return None
         from vllm.lora.request import LoRARequest
 
-        if path not in self.lora_ids:
-            self.lora_ids[path] = len(self.lora_ids) + 1
-        lora_id = self.lora_ids[path]
+        # 以“路径 + 权重文件修改时间”为键：同名目录被覆盖保存后会分到新的 lora_int_id，
+        # 避免 vLLM 继续使用缓存里的旧 adapter
+        key = adapter_version(path)
+        if key not in self.lora_ids:
+            self.lora_ids[key] = len(self.lora_ids) + 1
+        lora_id = self.lora_ids[key]
         return LoRARequest(lora_name=f"lora-{lora_id}", lora_int_id=lora_id, lora_path=path)
 
     async def generate(

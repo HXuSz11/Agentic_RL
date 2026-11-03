@@ -78,7 +78,7 @@ optim_step ──► save_weights_and_get_sampling_client()
 | `dro` | `-(lp · A - 0.5 · β · (lp - old)²)` | `beta`（默认 0.05） |
 
 - `target_tokens == -100` 的位置不参与计算；prompt 位置一般用 target 0、advantage 0 占位（贡献为 0）。
-- **归一化**：一次 `forward_backward` 调用就是一个 logical batch，内置 loss 的梯度按整批的 active token 数归一化（与 PyTRIO 文档“按完整 logical batch 归一化”的描述一致）；micro-batch 拆分不改变梯度。可在配置里改成 `samples` 或 `sum`（Tinker 风格）。
+- **归一化**：一次 `forward_backward` 调用就是一个 logical batch，内置 loss 的梯度按整批的 active token 数归一化（active token = `target != -100` 的位置，与 PyTRIO SDK 统计 `total_active_tokens` 的口径一致，prompt / observation 位置若用 target 0 占位也会计入）；micro-batch 拆分不改变梯度。全局可在配置里改成 `samples`（除以样本数）或 `sum`（Tinker 风格，不归一化），也可以按调用覆盖：`forward_backward(data, "ppo", {"clip_low_threshold": 0.8, "clip_high_threshold": 1.28, "normalization": "sum"})`。原教程各章对 PyTRIO 服务端口径的假设不完全相同，相关章节的快速启动里写了建议值；Adam 对整体常数缩放不敏感，口径差异主要影响不同 step 之间的相对权重。
 - 返回的 `metrics` 与 PyTRIO 同名：`loss_sum`、`token_count`、`loss_mean = loss_sum / token_count`；custom loss 返回的指标会合并进去。
 - 采样端返回的 logprob 是**原始模型分布**（vLLM `logprobs_mode=raw_logprobs`），与训练端 `forward` 口径一致，on-policy 时 ratio ≈ 1。
 
@@ -89,6 +89,9 @@ optim_step ──► save_weights_and_get_sampling_client()
 - 训练端用与基模匹配的 image processor 处理像素，把占位符展开为 `expected_tokens` 个视觉 token，并**校验** `expected_tokens` 与 processor 的计算一致；Qwen3.5 需要的 `mm_token_type_ids` 自动生成；视觉塔不加 LoRA。
 - 采样端给 vLLM 一个 `<|image_pad|>` + `multi_modal_data`，由 vLLM 按真实尺寸展开。
 - 与 PyTRIO 相同：带图片的 prompt 不支持 `compute_logprobs` / prompt logprobs。
+- 图文样本和文本样本一样按 `max_tokens_per_microbatch` 打包（视觉 token 计入长度）。
+- vLLM 端默认 `limit_mm_per_prompt: {image: 8, video: 0}`，一条 prompt 需要更多图片时在 `models.default.limit_mm_per_prompt` 里调大。
+- 与引擎一致的模型目录 / image processor：`trio.get_model_dir(base_model)`、`trio.get_image_processor(base_model)`。
 
 ## LoRA 作用范围
 
@@ -141,7 +144,7 @@ uv run python -m localtrio merge --adapter <sampler_weights 目录> --out ./merg
                                                                  # 把 LoRA 合并进基模，导出完整权重
 ```
 
-`serve` 适合用 OpenAI SDK 写的评测脚本（例如 Medical OPD 的 MedQA / C-Eval 评测）：模型名填基模名或 `--lora` 里的名字，API key 任意。`--max-model-len` 默认 32768（传 0 用模型自带上限）；不认识的参数会原样转发给 vLLM，例如 `--enforce-eager`、`--data-parallel-size 3`。服务开启了 `VLLM_ALLOW_RUNTIME_LORA_UPDATING`，评测脚本可以通过 `/v1/load_lora_adapter` 动态挂载新的 checkpoint。
+`serve` 适合用 OpenAI SDK 写的评测脚本（例如 Medical OPD 的 MedQA / C-Eval 评测）：模型名填基模名或 `--lora` 里的名字，API key 任意。`--max-model-len` 默认 32768（传 0 用模型自带上限）；只服务基模（例如大模型裁判）时加 `--no-lora` 省下 LoRA 预留显存；不认识的参数会原样转发给 vLLM，例如 `--enforce-eager`、`--data-parallel-size 3`。服务开启了 `VLLM_ALLOW_RUNTIME_LORA_UPDATING`，评测脚本可以通过 `/v1/load_lora_adapter` 动态挂载新的 checkpoint。
 
 ## 从 PyTRIO 代码迁移
 

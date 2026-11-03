@@ -193,3 +193,28 @@ def test_vision_sampling_and_training(trio, vl_model):
     with pytest.raises(trio.ValidationError):
         sampler.compute_logprobs(prompt)
     _ = torch  # noqa: F841
+
+
+def test_overwritten_weights_are_reloaded(trio, text_model):
+    """同名 save_weights_for_sampler 覆盖后，采样端必须加载新权重而不是缓存的旧 adapter。"""
+    service = trio.ServiceClient()
+    tc = service.create_lora_training_client(base_model=text_model, rank=4, seed=3)
+    tok = tc.get_tokenizer()
+    ids = tok.encode("<|im_start|>user\nabc<|im_end|>\n<|im_start|>assistant\n", add_special_tokens=False)
+    target = tok.encode("answer 3<|im_end|>", add_special_tokens=False)
+    full = trio.ModelInput.from_ints(ids + target)
+    first = tc.save_weights_for_sampler(name="same").result()
+    sampler = service.create_sampling_client(base_model=text_model, model_path=first.path)
+    before = sampler.compute_logprobs(full).result()
+    obs = len(ids) - 1
+    datum = trio.Datum(
+        model_input=trio.ModelInput.from_ints(ids + target[:-1]),
+        loss_fn_inputs={"target_tokens": np.asarray([0] * obs + target, dtype=np.int64), "weights": np.asarray([0.0] * obs + [1.0] * len(target), dtype=np.float32)},
+    )
+    for _ in range(3):
+        tc.forward_backward([datum], loss_fn="cross_entropy").result()
+        tc.optim_step(trio.AdamParams(learning_rate=5e-2)).result()
+    second = tc.save_weights_for_sampler(name="same").result()
+    assert second.path == first.path
+    after = service.create_sampling_client(base_model=text_model, model_path=second.path).compute_logprobs(full).result()
+    assert sum(after[len(ids):]) > sum(before[len(ids):]) + 0.5

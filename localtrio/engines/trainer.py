@@ -389,7 +389,9 @@ class TrainerEngine:
         if auto_shift:
             prepared = [self._shift(item) for item in prepared]
         counts = losses.count_tokens(loss_fn, [p.inputs for p in prepared], auto_shift=False)
-        denom = losses.denominator(loss_fn, counts, self.cfg.get("loss_normalization", "active_tokens"))
+        # loss_fn_config["normalization"] 可按调用覆盖全局 trainer.loss_normalization
+        mode = (loss_fn_config or {}).get("normalization") or self.cfg.get("loss_normalization", "active_tokens")
+        denom = losses.denominator(loss_fn, counts, str(mode))
         return self._run_batches(prepared, loss_fn, loss_fn_config, backward, denom, counts)
 
     @staticmethod

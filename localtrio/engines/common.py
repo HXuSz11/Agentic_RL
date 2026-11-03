@@ -38,6 +38,18 @@ def split_stop(stop: Any, tokenizer: Any) -> tuple[list[str], list[int]]:
     return list(dict.fromkeys(texts)), list(dict.fromkeys(ids))
 
 
+def adapter_version(path: str) -> str:
+    """LoRA 目录的版本键：路径 + 权重文件的修改时间（同名目录被覆盖后键会变化）。"""
+    import os
+
+    weights = os.path.join(path, "adapter_model.safetensors")
+    try:
+        stamp = os.stat(weights).st_mtime_ns
+    except OSError:
+        stamp = 0
+    return f"{path}@{stamp}"
+
+
 def decode_image(data: bytes) -> Any:
     from PIL import Image
 

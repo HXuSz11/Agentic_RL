@@ -15,7 +15,7 @@ from typing import Any
 import torch
 
 from ..models import image_token_id, is_multimodal, load_hf_model, load_image_processor, load_tokenizer
-from .common import default_stop_ids, expand_chunks, split_stop
+from .common import adapter_version, default_stop_ids, expand_chunks, split_stop
 
 logger = logging.getLogger("localtrio.hf_sampler")
 
@@ -62,19 +62,20 @@ class HFSamplerEngine:
             return
         from peft import PeftModel
 
-        name = self.adapters.get(lora_path)
+        key = adapter_version(lora_path)  # 同名目录被覆盖保存后重新加载
+        name = self.adapters.get(key)
         if name is None:
             name = f"a{len(self.adapters)}_{int(time.time() * 1000) % 10**8}"
             if isinstance(self.model, PeftModel):
                 self.model.load_adapter(lora_path, adapter_name=name)
             else:
                 self.model = PeftModel.from_pretrained(self.base, lora_path, adapter_name=name)
-            self.adapters[lora_path] = name
+            self.adapters[key] = name
             while len(self.adapters) > self.max_adapters:
-                old_path, old_name = self.adapters.popitem(last=False)
+                old_key, old_name = self.adapters.popitem(last=False)
                 if old_name != name:
                     self.model.delete_adapter(old_name)
-        self.adapters.move_to_end(lora_path)
+        self.adapters.move_to_end(key)
         self.model.enable_adapter_layers()
         self.model.set_adapter(name)
         self.model.eval()

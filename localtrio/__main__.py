@@ -83,9 +83,13 @@ def cmd_serve(args: argparse.Namespace) -> None:
             raise SystemExit(f"--lora 需要 name=path 格式：{item}")
         name, path = item.split("=", 1)
         loras.append(f"{name}={Path(path).expanduser().resolve()}")
-    cmd += ["--enable-lora", "--max-lora-rank", str(args.max_lora_rank)]
-    if loras:
-        cmd += ["--lora-modules", *loras]
+    if args.no_lora:
+        if loras:
+            raise SystemExit("--no-lora 与 --lora 不能同时使用")
+    else:
+        cmd += ["--enable-lora", "--max-lora-rank", str(args.max_lora_rank)]
+        if loras:
+            cmd += ["--lora-modules", *loras]
     cmd += args.extra
     from .config import physical_devices
 
@@ -145,6 +149,7 @@ def main() -> None:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--max-model-len", type=int, default=32768, help="默认 32768；传 0 使用模型自带上限")
     p.add_argument("--max-lora-rank", type=int, default=64)
+    p.add_argument("--no-lora", action="store_true", help="不启用 LoRA（只服务基模，例如大模型裁判），省下 LoRA 预留显存")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     p.set_defaults(fn=cmd_serve, extra=[])
 

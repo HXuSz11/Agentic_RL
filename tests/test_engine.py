@@ -335,3 +335,20 @@ def test_datum_validate_loss_inputs():
     bad = trio.Datum(model_input=trio.ModelInput.from_ints([1, 2]), loss_fn_inputs=dict(ok.loss_fn_inputs))
     with pytest.raises(ValueError, match="shape"):
         bad.validate_loss_inputs("ppo")
+
+
+def test_per_call_normalization_override(text_model):
+    """loss_fn_config['normalization'] 按调用覆盖分母：sum 的梯度 = active_tokens 梯度 × token 数。"""
+    eng = make_engine(text_model)
+    eng.create_run("n", rank=4, seed=2, train_mlp=True, train_attn=True, train_unembed=False)
+    with torch.no_grad():
+        for p in eng.runs["n"].params:
+            p.add_(torch.randn_like(p) * 0.05)
+    data = [text_datum(np.random.default_rng(8), n, len(eng.tokenizer)) for n in (7, 13)]
+    out = eng.forward("n", data, "importance_sampling", None, False, True)
+    mean_grad = lora_grads(eng, "n")
+    zero_grads(eng, "n")
+    eng.forward("n", data, "importance_sampling", {"normalization": "sum"}, False, True)
+    sum_grad = lora_grads(eng, "n")
+    zero_grads(eng, "n")
+    torch.testing.assert_close(sum_grad, mean_grad * out["metrics"]["token_count"], rtol=1e-4, atol=1e-6)
